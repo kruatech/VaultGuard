@@ -1,0 +1,14 @@
+// Signing.example.xcconfig
+//
+// Template for local code-signing settings. This file IS committed to the repo.
+//
+// Setup (each developer, once):
+//   cp Config/Signing.example.xcconfig Config/Signing.local.xcconfig
+//   # then edit Config/Signing.local.xcconfig and set DEVELOPMENT_TEAM
+//
+// Config/Signing.xcconfig includes Signing.local.xcconfig optionally, so
+// xcodegen works even when the local file does not exist.
+// Config/Signing.local.xcconfig is git-ignored and must never be committed.
+
+// Your 10-character Apple Developer Team ID (Apple Developer portal > Membership).
+DEVELOPMENT_TEAM =

@@ -1,0 +1,13 @@
+// Signing.xcconfig
+//
+// Safe default signing configuration committed to the repository.
+// It keeps XcodeGen valid on clean clones and CI while allowing each developer
+// to override signing locally via Config/Signing.local.xcconfig.
+//
+// Config/Signing.local.xcconfig is git-ignored and must never be committed.
+
+// Blank by default so CI can build with CODE_SIGNING_ALLOWED=NO.
+DEVELOPMENT_TEAM =
+
+// Optional local override. Xcode ignores this include when the file is absent.
+#include? "Signing.local.xcconfig"

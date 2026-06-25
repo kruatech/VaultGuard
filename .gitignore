@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.swiftpm/
+
+# Local signing (per-developer Apple Team ID — never commit)
+Config/Signing.local.xcconfig

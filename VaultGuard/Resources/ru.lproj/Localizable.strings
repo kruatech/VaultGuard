@@ -1,0 +1,345 @@
+/* Common */
+"common.cancel" = "Отмена";
+"common.save" = "Сохранить";
+"common.delete" = "Удалить";
+"common.close" = "Закрыть";
+"common.edit" = "Редактировать";
+"common.create" = "Создать";
+"common.copied" = "Скопировано";
+"common.saved" = "Сохранено";
+"common.deleted" = "Удалено";
+"common.error" = "Ошибка";
+"common.search" = "Поиск";
+"common.noFolder" = "Без папки";
+"common.syncComplete" = "Синхронизировано";
+"common.syncError" = "Ошибка синхронизации";
+"common.encryptionError" = "Ошибка шифрования";
+"common.moved" = "Перемещено";
+"common.fileSaved" = "Файл сохранён";
+"common.loading" = "Загрузка…";
+
+/* Auth */
+"auth.title" = "VaultGuard";
+"auth.subtitle" = "Менеджер паролей";
+"auth.serverLabel" = "Адрес сервера";
+"auth.serverPlaceholder" = "https://vault.example.com";
+"auth.emailLabel" = "Email";
+"auth.emailPlaceholder" = "user@example.com";
+"auth.masterPasswordLabel" = "Мастер-пароль";
+"auth.rememberBiometric" = "Защитить ключ разблокировки через %@";
+"auth.unlockWith" = "Разблокировать через %@";
+"auth.loginButton" = "Войти";
+"auth.loginOther" = "Войти в другой аккаунт";
+"auth.encryptionNote" = "Шифрование AES-256 · PBKDF2/Argon2id · Bitwarden-совместимый";
+"auth.twoFactorTitle" = "Двухфакторная аутентификация";
+"auth.twoFactorPrompt" = "Введите 6-значный код из приложения-аутентификатора";
+"auth.twoFactorCode" = "Код";
+"auth.twoFactorRemember" = "Запомнить это устройство";
+"auth.twoFactorVerify" = "Подтвердить";
+
+/* Sidebar */
+"sidebar.allItems" = "Все записи";
+"sidebar.favorites" = "Избранное";
+"sidebar.vault" = "Хранилище";
+"sidebar.types" = "Типы";
+"sidebar.folders" = "Папки";
+"sidebar.collections" = "Коллекции";
+"sidebar.trash" = "Корзина";
+"sidebar.newFolder" = "Новая папка";
+"sidebar.generator" = "Генератор";
+"sidebar.settings" = "Настройки";
+"sidebar.sync" = "Синхронизировать";
+"sidebar.lock" = "Заблокировать";
+"sidebar.logout" = "Выйти";
+"sidebar.myVault" = "Моё хранилище";
+"sidebar.organization" = "Организация";
+
+/* Items List */
+"items.newItem" = "Новая";
+"items.sortName" = "А-Я";
+"items.sortDate" = "Дата";
+"items.notFound" = "Не найдено";
+"items.count" = "%d элем. · %@";
+"items.copyPassword" = "Копировать пароль";
+"items.copyLogin" = "Копировать логин";
+"items.openUrl" = "Открыть URL";
+"items.moveToFolder" = "Переместить в папку";
+"items.addFavorite" = "В избранное";
+"items.removeFavorite" = "Убрать из избранного";
+
+/* Detail */
+"detail.selectItem" = "Выберите запись";
+"detail.orCreateNew" = "или создайте новую";
+"detail.username" = "Имя пользователя";
+"detail.password" = "Пароль";
+"detail.url" = "URL";
+"detail.notes" = "Заметка";
+"detail.customFields" = "Поля";
+"detail.attachments" = "Вложения";
+"detail.deleteAttachmentConfirm" = "Удалить это вложение? Действие необратимо.";
+"detail.created" = "Создано";
+"detail.modified" = "Изменено";
+"detail.passwordAge" = "Пароль";
+"detail.totp" = "Одноразовый код (TOTP)";
+"detail.totpKey" = "Ключ аутентификатора";
+"detail.cardHolder" = "Владелец";
+"detail.cardNumber" = "Номер карты";
+"detail.cardExpiry" = "Срок";
+"detail.cardCvv" = "CVV";
+"detail.secureNote" = "Защищённая заметка";
+"detail.dropFilesHere" = "Перетащите файлы для вложения";
+
+/* Identity */
+"identity.fullName" = "Полное имя";
+"identity.firstName" = "Имя";
+"identity.middleName" = "Отчество";
+"identity.lastName" = "Фамилия";
+"identity.title" = "Обращение";
+"identity.company" = "Компания";
+"identity.email" = "Email";
+"identity.phone" = "Телефон";
+"identity.phonePlaceholder" = "+7...";
+"identity.ssn" = "ИНН / SSN";
+"identity.passport" = "Паспорт";
+"identity.license" = "Водительское удостоверение";
+"identity.address1" = "Адрес 1";
+"identity.address2" = "Адрес 2";
+"identity.address3" = "Адрес 3";
+"identity.city" = "Город";
+"identity.state" = "Область / Регион";
+"identity.postalCode" = "Индекс";
+"identity.country" = "Страна";
+"identity.username" = "Имя пользователя";
+
+/* Editor */
+"editor.newItem" = "Новая запись";
+"editor.editing" = "Редактирование";
+"editor.nameLabel" = "Название";
+"editor.namePlaceholder" = "GitHub, Gmail...";
+"editor.typeLabel" = "Тип";
+"editor.folderLabel" = "Папка";
+"editor.loginLabel" = "Логин / Email";
+"editor.passwordLabel" = "Пароль";
+"editor.urlLabel" = "URL";
+"editor.totpToggle" = "TOTP (двухфакторная аутентификация)";
+"editor.totpSecretLabel" = "Ключ аутентификатора (Secret)";
+"editor.totpHint" = "Base32-ключ из настроек 2FA сервиса";
+"editor.notesLabel" = "Заметка";
+"editor.favorite" = "Избранное";
+"editor.customFieldsLabel" = "Пользовательские поля";
+"editor.addField" = "Добавить поле";
+"editor.fieldName" = "Название";
+"editor.fieldValue" = "Значение";
+"editor.fieldText" = "Текст";
+"editor.fieldHidden" = "Скрытое";
+"editor.fieldBoolean" = "Да/Нет";
+"editor.generate" = "Сгенерировать";
+"editor.show" = "Показать";
+"editor.hide" = "Скрыть";
+"editor.unsavedTitle" = "Несохранённые изменения";
+"editor.unsavedMessage" = "У вас есть несохранённые изменения. Отменить?";
+"editor.discardChanges" = "Отменить изменения";
+"editor.continueEditing" = "Продолжить редактирование";
+
+/* Generator */
+"generator.title" = "Генератор паролей";
+"generator.length" = "Длина";
+"generator.refresh" = "Обновить";
+
+/* Settings */
+"settings.title" = "Настройки";
+"settings.server" = "Сервер";
+"settings.security" = "Безопасность";
+"settings.interface" = "Интерфейс";
+"settings.about" = "О приложении";
+"settings.selfSigned" = "Разрешить самоподписанные сертификаты";
+"settings.selfSignedHint" = "Только для self-hosted серверов. VaultGuard покажет и закрепит SHA-256 отпечаток сертификата перед подключением.";
+"settings.biometry" = "Биометрия";
+"settings.biometryUnavailable" = "Недоступна";
+"settings.masterPasswordSaved" = "Ключ разблокировки защищён";
+"settings.clipboardTimeout" = "Таймаут буфера обмена";
+"settings.autoLock" = "Автоблокировка";
+"settings.theme" = "Тема оформления";
+"settings.themeSystem" = "Системная";
+"settings.themeLight" = "Светлая";
+"settings.themeDark" = "Тёмная";
+"settings.language" = "Язык";
+"settings.showFavicons" = "Показывать фавиконки сайтов";
+"settings.logoutButton" = "Выйти и удалить все локальные данные";
+"settings.vaultguardDesc" = "Нативный macOS-клиент для Vaultwarden";
+"settings.author" = "Разработчик";
+"settings.sourceCode" = "Исходный код";
+"settings.contact" = "Контакт";
+
+/* Cipher Types */
+"cipherType.logins" = "Логины";
+"cipherType.secureNotes" = "Заметки";
+"cipherType.cards" = "Карты";
+"cipherType.identities" = "Личная информация";
+
+/* Password Strength */
+"strength.weak" = "Слабый";
+"strength.fair" = "Средний";
+"strength.good" = "Хороший";
+"strength.strong" = "Отличный";
+
+/* Folder */
+"folder.newTitle" = "Новая папка";
+"folder.renameTitle" = "Переименовать папку";
+"folder.namePlaceholder" = "Имя папки";
+"folder.deleteTitle" = "Удалить папку «%@»?";
+"folder.deleteMessage" = "Записи из папки не будут удалены — они переместятся в корень хранилища.";
+"folder.created" = "Папка создана";
+"folder.renamed" = "Папка переименована";
+"folder.deleted" = "Папка удалена";
+
+/* Time */
+"time.today" = "сегодня";
+"time.yesterday" = "вчера";
+"time.daysAgo" = "%d дн.";
+"time.seconds10" = "10 сек";
+"time.seconds30" = "30 сек";
+"time.seconds60" = "60 сек";
+"time.minutes2" = "2 мин";
+"time.minute1" = "1 мин";
+"time.minutes5" = "5 мин";
+"time.minutes15" = "15 мин";
+"time.hour1" = "1 час";
+"time.never" = "Никогда";
+
+/* Drag & Drop */
+"dragdrop.uploading" = "Загрузка…";
+"dragdrop.uploadComplete" = "Загрузка завершена";
+"dragdrop.uploadFailed" = "Ошибка загрузки";
+"dragdrop.dropFiles" = "Перетащите файлы или папки для вложения";
+"dragdrop.dropOrChoose" = "Перетащите файлы или нажмите для выбора";
+"dragdrop.processingFolder" = "Обработка папки…";
+
+/* Delete Confirm */
+"deleteConfirm.title" = "Удалить «%@»?";
+"deleteConfirm.message" = "Отменить нельзя.";
+
+/* Misc */
+"misc.user" = "Пользователь";
+"misc.noName" = "Без имени";
+"misc.noOrgKey" = "🔒 Нет ключа орг.";
+"misc.undecryptable" = "⚠️ Не читается (устаревшее шифрование)";
+"misc.yes" = "Да";
+"misc.no" = "Нет";
+"misc.image" = "Изображение";
+"misc.previewUnavailable" = "Предпросмотр недоступен";
+"misc.openInApp" = "Открыть в приложении";
+"misc.attachment" = "Вложение";
+"misc.dataSize" = "Размер данных: %d байт";
+"misc.cannotOpenFile" = "Не удалось открыть файл";
+"misc.rename" = "Переименовать";
+"misc.sortAlphabetically" = "По алфавиту";
+"misc.sortManually" = "Вручную";
+
+/* Biometric / Keychain / Reprompt / Offline (added) */
+"biometric.password" = "Пароль";
+"biometric.generic" = "Биометрия";
+"biometric.unlockReason" = "Разблокировать VaultGuard";
+"biometric.enterPassword" = "Ввести пароль";
+"biometric.saveReason" = "Защитить ключ хранилища в Keychain";
+"keychain.saveError" = "Ошибка сохранения в Keychain";
+"keychain.loadError" = "Ошибка чтения из Keychain";
+"keychain.deleteError" = "Ошибка удаления из Keychain";
+"reprompt.title" = "Требуется мастер-пароль";
+"reprompt.subtitle" = "Введите мастер-пароль ещё раз, чтобы показать эту запись.";
+"reprompt.placeholder" = "Мастер-пароль";
+"reprompt.verify" = "Подтвердить";
+"reprompt.wrong" = "Неверный мастер-пароль";
+"offline.usingCache" = "Офлайн — показано из кэша";
+
+/* 2FA providers (added) */
+"auth.twoFactorProviderLabel" = "Способ";
+"auth.twoFactorProviderAuthenticator" = "Приложение-аутентификатор";
+"auth.twoFactorProviderEmail" = "Email";
+"auth.twoFactorProviderYubiKey" = "YubiKey OTP";
+"auth.twoFactorSendEmail" = "Отправить код на email";
+"auth.twoFactorEmailSent" = "Код отправлен на email";
+"auth.twoFactorUnsupported" = "Сервер предлагает только методы 2FA, которые приложение пока не поддерживает (например, Duo или WebAuthn).";
+
+/* === Accounts / QR / Password templates === */
+"auth.addAccount" = "Добавить новый аккаунт";
+"auth.connectionName" = "Имя подключения (необязательно)";
+"editor.pasteFromClipboard" = "Вставить QR или ключ из буфера обмена";
+"editor.loadQRFromFile" = "Загрузить QR-код из файла";
+"editor.qrNotReadImage" = "Не удалось прочитать изображение";
+"editor.qrNotRecognized" = "QR-код не распознан на изображении";
+"editor.qrClipboardEmpty" = "В буфере нет QR-кода или ключа";
+"editor.qrNotInFile" = "QR-код не найден в файле";
+"editor.defaultGenerator" = "По умолчанию";
+"editor.chooseTemplate" = "Выбрать шаблон генерации";
+"generator.excludeAmbiguous" = "Без похожих символов (0/O, 1/l/I)";
+"generator.templates" = "Шаблоны";
+"generator.noTemplates" = "Пока нет шаблонов — сохраните текущие настройки как шаблон.";
+"generator.saveAsTemplate" = "Сохранить как шаблон";
+"generator.updateSelected" = "Обновить выбранный";
+"generator.newTemplate" = "Новый шаблон";
+"generator.renameTemplate" = "Переименовать шаблон";
+"generator.templateName" = "Название";
+"generator.noSimilarShort" = "без похожих";
+"generator.starterStandard" = "Стандартный";
+"generator.starterStrong30" = "Сильный 30";
+"generator.starterAlnum12" = "Буквы и цифры 12";
+"generator.starterPin6" = "ПИН 6";
+"settings.account" = "Аккаунт";
+"settings.connectionName" = "Имя подключения";
+"settings.masterPassword" = "Мастер-пароль";
+"settings.storedInKeychain" = "Защищено в Keychain";
+"settings.notSaved" = "Не сохранён";
+"settings.forget" = "Забыть";
+"settings.languageSystem" = "Системный";
+"items.duplicate" = "Дублировать";
+"items.copySuffix" = "(копия)";
+"auth.useMasterPassword" = "Войти по мастер-паролю";
+"auth.currentAccount" = "Текущий";
+"auth.masterPasswordPlaceholder" = "Введите мастер-пароль";
+"auth.serverHint" = "Укажите полный адрес вашего сервера";
+"auth.biometricHint" = "Мастер-пароль не сохраняется. В Keychain защищается ключ разблокировки хранилища.";
+"auth.orDivider" = "или";
+"biometric.cancelled" = "Аутентификация отменена";
+"biometric.failed" = "Не удалось пройти проверку";
+"biometric.unavailable" = "Биометрия недоступна";
+"editor.qrNoImageClipboard" = "В буфере нет изображения";
+"generator.templateLabel" = "Шаблон";
+"generator.builtinSection" = "Встроенные";
+"generator.mySection" = "Мои шаблоны";
+"generator.saveCurrentAsNew" = "Сохранить текущие настройки как новый шаблон…";
+"generator.appliedBanner" = "Шаблон применён. Измените настройки или выберите другой шаблон.";
+"generator.differsTitle" = "Настройки отличаются от шаблона";
+"generator.differsBody" = "Вы изменили параметры генерации.";
+"generator.updateTemplate" = "Обновить шаблон";
+"generator.saveAsNew" = "Сохранить как новый";
+"generator.reset" = "Сбросить";
+"generator.usePassword" = "Использовать пароль";
+"generator.copyPassword" = "Скопировать пароль";
+"generator.charset" = "Набор символов";
+"generator.generatedLabel" = "Сгенерированный пароль";
+"generator.newTemplateNamePrefix" = "Мой шаблон";
+
+/* === Security / AutoFill / Account (hardening, added) === */
+"settings.trustedCertificate" = "Доверенный сертификат";
+"settings.pinned" = "Закреплён";
+"certTrust.titleUntrusted" = "Недоверенный сертификат";
+"certTrust.titleChanged" = "Сертификат изменился";
+"certTrust.bodySelfSigned" = "Этот сервер использует самоподписанный сертификат. Прежде чем доверять, убедитесь, что отпечаток ниже совпадает с вашим сервером.";
+"certTrust.bodyChanged" = "Сертификат этого сервера изменился с момента, когда вы ему доверились. Если вы этого не ожидали, это может указывать на атаку — не продолжайте, пока не выясните причину изменения.";
+"certTrust.trust" = "Доверять";
+"certTrust.trustAnyway" = "Всё равно доверять";
+"autofill.openApp" = "Открыть VaultGuard";
+"autofill.tryAgain" = "Повторить";
+"autofill.errNotConfigured" = "VaultGuard не выполнил вход на этом устройстве.";
+"autofill.errLocked" = "Откройте VaultGuard и разблокируйте хранилище, чтобы использовать автозаполнение.";
+"autofill.errNoCache" = "Откройте VaultGuard хотя бы раз, чтобы включить автозаполнение.";
+"autofill.errDecode" = "Не удалось прочитать кэш хранилища.";
+"autofill.errNoMatch" = "Совпадений не найдено.";
+"account.dataNotRemoved" = "Некоторые данные аккаунта не удалось полностью удалить.";
+"account.biometricNotEnabled" = "Биометрическая разблокировка не включена.";
+"account.biometricNotDisabled" = "Не удалось полностью отключить биометрическую разблокировку.";
+
+/* === Wave 3: cert-cancel + App Group (added) === */
+"certTrust.cancelled" = "Доверие к сертификату отменено. Сервер не добавлен.";
+"account.appGroupUnavailable" = "Общий контейнер не настроен. AutoFill не может получить доступ к хранилищу — проверьте capability App Group.";

@@ -1,0 +1,345 @@
+/* Common */
+"common.cancel" = "Cancel";
+"common.save" = "Save";
+"common.delete" = "Delete";
+"common.close" = "Close";
+"common.edit" = "Edit";
+"common.create" = "Create";
+"common.copied" = "Copied";
+"common.saved" = "Saved";
+"common.deleted" = "Deleted";
+"common.error" = "Error";
+"common.search" = "Search";
+"common.noFolder" = "No folder";
+"common.syncComplete" = "Synced";
+"common.syncError" = "Sync error";
+"common.encryptionError" = "Encryption error";
+"common.moved" = "Moved";
+"common.fileSaved" = "File saved";
+"common.loading" = "Loading…";
+
+/* Auth */
+"auth.title" = "VaultGuard";
+"auth.subtitle" = "Password Manager";
+"auth.serverLabel" = "Server address";
+"auth.serverPlaceholder" = "https://vault.example.com";
+"auth.emailLabel" = "Email";
+"auth.emailPlaceholder" = "user@example.com";
+"auth.masterPasswordLabel" = "Master Password";
+"auth.rememberBiometric" = "Protect unlock key with %@";
+"auth.unlockWith" = "Unlock with %@";
+"auth.loginButton" = "Log In";
+"auth.loginOther" = "Log in with another account";
+"auth.encryptionNote" = "AES-256 encryption · PBKDF2/Argon2id · Bitwarden-compatible";
+"auth.twoFactorTitle" = "Two-Factor Authentication";
+"auth.twoFactorPrompt" = "Enter the 6-digit code from your authenticator app";
+"auth.twoFactorCode" = "Code";
+"auth.twoFactorRemember" = "Remember this device";
+"auth.twoFactorVerify" = "Verify";
+
+/* Sidebar */
+"sidebar.allItems" = "All Items";
+"sidebar.favorites" = "Favorites";
+"sidebar.vault" = "Vault";
+"sidebar.types" = "Types";
+"sidebar.folders" = "Folders";
+"sidebar.collections" = "Collections";
+"sidebar.trash" = "Trash";
+"sidebar.newFolder" = "New Folder";
+"sidebar.generator" = "Generator";
+"sidebar.settings" = "Settings";
+"sidebar.sync" = "Sync";
+"sidebar.lock" = "Lock";
+"sidebar.logout" = "Log Out";
+"sidebar.myVault" = "My Vault";
+"sidebar.organization" = "Organization";
+
+/* Items List */
+"items.newItem" = "New";
+"items.sortName" = "A-Z";
+"items.sortDate" = "Date";
+"items.notFound" = "Not found";
+"items.count" = "%d items · %@";
+"items.copyPassword" = "Copy password";
+"items.copyLogin" = "Copy login";
+"items.openUrl" = "Open URL";
+"items.moveToFolder" = "Move to folder";
+"items.addFavorite" = "Add to favorites";
+"items.removeFavorite" = "Remove from favorites";
+
+/* Detail */
+"detail.selectItem" = "Select an item";
+"detail.orCreateNew" = "or create a new one";
+"detail.username" = "Username";
+"detail.password" = "Password";
+"detail.url" = "URL";
+"detail.notes" = "Notes";
+"detail.customFields" = "Fields";
+"detail.attachments" = "Attachments";
+"detail.deleteAttachmentConfirm" = "Delete this attachment? This cannot be undone.";
+"detail.created" = "Created";
+"detail.modified" = "Modified";
+"detail.passwordAge" = "Password";
+"detail.totp" = "One-Time Code (TOTP)";
+"detail.totpKey" = "Authenticator Key";
+"detail.cardHolder" = "Cardholder";
+"detail.cardNumber" = "Card Number";
+"detail.cardExpiry" = "Expires";
+"detail.cardCvv" = "CVV";
+"detail.secureNote" = "Secure Note";
+"detail.dropFilesHere" = "Drop files here to attach";
+
+/* Identity */
+"identity.fullName" = "Full Name";
+"identity.firstName" = "First Name";
+"identity.middleName" = "Middle Name";
+"identity.lastName" = "Last Name";
+"identity.title" = "Title";
+"identity.company" = "Company";
+"identity.email" = "Email";
+"identity.phone" = "Phone";
+"identity.phonePlaceholder" = "+1...";
+"identity.ssn" = "SSN / Tax ID";
+"identity.passport" = "Passport";
+"identity.license" = "Driver's License";
+"identity.address1" = "Address 1";
+"identity.address2" = "Address 2";
+"identity.address3" = "Address 3";
+"identity.city" = "City";
+"identity.state" = "State / Region";
+"identity.postalCode" = "Postal Code";
+"identity.country" = "Country";
+"identity.username" = "Username";
+
+/* Editor */
+"editor.newItem" = "New Item";
+"editor.editing" = "Edit";
+"editor.nameLabel" = "Name";
+"editor.namePlaceholder" = "GitHub, Gmail...";
+"editor.typeLabel" = "Type";
+"editor.folderLabel" = "Folder";
+"editor.loginLabel" = "Login / Email";
+"editor.passwordLabel" = "Password";
+"editor.urlLabel" = "URL";
+"editor.totpToggle" = "TOTP (two-factor authentication)";
+"editor.totpSecretLabel" = "Authenticator Secret Key";
+"editor.totpHint" = "Base32 key from the 2FA settings of the service";
+"editor.notesLabel" = "Notes";
+"editor.favorite" = "Favorite";
+"editor.customFieldsLabel" = "Custom Fields";
+"editor.addField" = "Add field";
+"editor.fieldName" = "Name";
+"editor.fieldValue" = "Value";
+"editor.fieldText" = "Text";
+"editor.fieldHidden" = "Hidden";
+"editor.fieldBoolean" = "Yes/No";
+"editor.generate" = "Generate";
+"editor.show" = "Show";
+"editor.hide" = "Hide";
+"editor.unsavedTitle" = "Unsaved Changes";
+"editor.unsavedMessage" = "You have unsaved changes. Discard?";
+"editor.discardChanges" = "Discard changes";
+"editor.continueEditing" = "Continue editing";
+
+/* Generator */
+"generator.title" = "Password Generator";
+"generator.length" = "Length";
+"generator.refresh" = "Refresh";
+
+/* Settings */
+"settings.title" = "Settings";
+"settings.server" = "Server";
+"settings.security" = "Security";
+"settings.interface" = "Interface";
+"settings.about" = "About";
+"settings.selfSigned" = "Allow self-signed certificates";
+"settings.selfSignedHint" = "For self-hosted servers only. VaultGuard will show and pin the SHA-256 certificate fingerprint before connecting.";
+"settings.biometry" = "Biometry";
+"settings.biometryUnavailable" = "Unavailable";
+"settings.masterPasswordSaved" = "Unlock key protected";
+"settings.clipboardTimeout" = "Clipboard timeout";
+"settings.autoLock" = "Auto-lock";
+"settings.theme" = "Appearance";
+"settings.themeSystem" = "System";
+"settings.themeLight" = "Light";
+"settings.themeDark" = "Dark";
+"settings.language" = "Language";
+"settings.showFavicons" = "Show website favicons";
+"settings.logoutButton" = "Log out and delete all local data";
+"settings.vaultguardDesc" = "Native macOS client for Vaultwarden";
+"settings.author" = "Developer";
+"settings.sourceCode" = "Source Code";
+"settings.contact" = "Contact";
+
+/* Cipher Types */
+"cipherType.logins" = "Logins";
+"cipherType.secureNotes" = "Notes";
+"cipherType.cards" = "Cards";
+"cipherType.identities" = "Identities";
+
+/* Password Strength */
+"strength.weak" = "Weak";
+"strength.fair" = "Fair";
+"strength.good" = "Good";
+"strength.strong" = "Strong";
+
+/* Folder */
+"folder.newTitle" = "New Folder";
+"folder.renameTitle" = "Rename Folder";
+"folder.namePlaceholder" = "Folder name";
+"folder.deleteTitle" = "Delete folder \"%@\"?";
+"folder.deleteMessage" = "Items in this folder won't be deleted — they'll be moved to the vault root.";
+"folder.created" = "Folder created";
+"folder.renamed" = "Folder renamed";
+"folder.deleted" = "Folder deleted";
+
+/* Time */
+"time.today" = "today";
+"time.yesterday" = "yesterday";
+"time.daysAgo" = "%d d.";
+"time.seconds10" = "10 sec";
+"time.seconds30" = "30 sec";
+"time.seconds60" = "60 sec";
+"time.minutes2" = "2 min";
+"time.minute1" = "1 min";
+"time.minutes5" = "5 min";
+"time.minutes15" = "15 min";
+"time.hour1" = "1 hour";
+"time.never" = "Never";
+
+/* Drag & Drop */
+"dragdrop.uploading" = "Uploading…";
+"dragdrop.uploadComplete" = "Upload complete";
+"dragdrop.uploadFailed" = "Upload failed";
+"dragdrop.dropFiles" = "Drop files or folders to attach";
+"dragdrop.dropOrChoose" = "Drop files here or click to choose";
+"dragdrop.processingFolder" = "Processing folder…";
+
+/* Delete Confirm */
+"deleteConfirm.title" = "Delete \"%@\"?";
+"deleteConfirm.message" = "This cannot be undone.";
+
+/* Misc */
+"misc.user" = "User";
+"misc.noName" = "Unnamed";
+"misc.noOrgKey" = "🔒 No org key";
+"misc.undecryptable" = "⚠️ Unreadable (legacy encryption)";
+"misc.yes" = "Yes";
+"misc.no" = "No";
+"misc.image" = "Image";
+"misc.previewUnavailable" = "Preview unavailable";
+"misc.openInApp" = "Open in app";
+"misc.attachment" = "Attachment";
+"misc.dataSize" = "Data size: %d bytes";
+"misc.cannotOpenFile" = "Cannot open file";
+"misc.rename" = "Rename";
+"misc.sortAlphabetically" = "Sort alphabetically";
+"misc.sortManually" = "Sort manually";
+
+/* Biometric / Keychain / Reprompt / Offline (added) */
+"biometric.password" = "Password";
+"biometric.generic" = "Biometrics";
+"biometric.unlockReason" = "Unlock VaultGuard";
+"biometric.enterPassword" = "Enter password";
+"biometric.saveReason" = "Protect the vault unlock key in Keychain";
+"keychain.saveError" = "Keychain save error";
+"keychain.loadError" = "Keychain read error";
+"keychain.deleteError" = "Keychain delete error";
+"reprompt.title" = "Master password required";
+"reprompt.subtitle" = "Re-enter your master password to reveal this item.";
+"reprompt.placeholder" = "Master password";
+"reprompt.verify" = "Verify";
+"reprompt.wrong" = "Incorrect master password";
+"offline.usingCache" = "Offline — showing cached vault";
+
+/* 2FA providers (added) */
+"auth.twoFactorProviderLabel" = "Method";
+"auth.twoFactorProviderAuthenticator" = "Authenticator app";
+"auth.twoFactorProviderEmail" = "Email";
+"auth.twoFactorProviderYubiKey" = "YubiKey OTP";
+"auth.twoFactorSendEmail" = "Send code by email";
+"auth.twoFactorEmailSent" = "Code sent to your email";
+"auth.twoFactorUnsupported" = "This server offers only 2FA methods not yet supported by this app (e.g. Duo or WebAuthn).";
+
+/* === Accounts / QR / Password templates === */
+"auth.addAccount" = "Add new account";
+"auth.connectionName" = "Connection name (optional)";
+"editor.pasteFromClipboard" = "Paste QR or key from clipboard";
+"editor.loadQRFromFile" = "Load QR code from file";
+"editor.qrNotReadImage" = "Couldn't read the image";
+"editor.qrNotRecognized" = "No QR code found in the image";
+"editor.qrClipboardEmpty" = "No QR code or key in the clipboard";
+"editor.qrNotInFile" = "No QR code found in the file";
+"editor.defaultGenerator" = "Default";
+"editor.chooseTemplate" = "Choose generation template";
+"generator.excludeAmbiguous" = "Exclude look-alike characters (0/O, 1/l/I)";
+"generator.templates" = "Templates";
+"generator.noTemplates" = "No templates yet — save the current settings as a template.";
+"generator.saveAsTemplate" = "Save as template";
+"generator.updateSelected" = "Update selected";
+"generator.newTemplate" = "New template";
+"generator.renameTemplate" = "Rename template";
+"generator.templateName" = "Name";
+"generator.noSimilarShort" = "no look-alikes";
+"generator.starterStandard" = "Standard";
+"generator.starterStrong30" = "Strong 30";
+"generator.starterAlnum12" = "Letters+digits 12";
+"generator.starterPin6" = "PIN 6";
+"settings.account" = "Account";
+"settings.connectionName" = "Connection name";
+"settings.masterPassword" = "Master password";
+"settings.storedInKeychain" = "Protected in Keychain";
+"settings.notSaved" = "Not saved";
+"settings.forget" = "Forget";
+"settings.languageSystem" = "System";
+"items.duplicate" = "Duplicate";
+"items.copySuffix" = "(copy)";
+"auth.useMasterPassword" = "Use master password instead";
+"auth.currentAccount" = "Current";
+"auth.masterPasswordPlaceholder" = "Enter master password";
+"auth.serverHint" = "Enter the full address of your server";
+"auth.biometricHint" = "Your master password is not stored. A vault unlock key is protected in Keychain for biometric unlock.";
+"auth.orDivider" = "or";
+"biometric.cancelled" = "Authentication cancelled";
+"biometric.failed" = "Authentication failed";
+"biometric.unavailable" = "Biometrics unavailable";
+"editor.qrNoImageClipboard" = "No image in the clipboard";
+"generator.templateLabel" = "Template";
+"generator.builtinSection" = "Built-in";
+"generator.mySection" = "My templates";
+"generator.saveCurrentAsNew" = "Save current settings as a new template…";
+"generator.appliedBanner" = "Template applied. Adjust the settings or pick another template.";
+"generator.differsTitle" = "Settings differ from the template";
+"generator.differsBody" = "You changed the generation parameters.";
+"generator.updateTemplate" = "Update template";
+"generator.saveAsNew" = "Save as new";
+"generator.reset" = "Reset";
+"generator.usePassword" = "Use password";
+"generator.copyPassword" = "Copy password";
+"generator.charset" = "Character set";
+"generator.generatedLabel" = "Generated password";
+"generator.newTemplateNamePrefix" = "My template";
+
+/* === Security / AutoFill / Account (hardening, added) === */
+"settings.trustedCertificate" = "Trusted certificate";
+"settings.pinned" = "Pinned";
+"certTrust.titleUntrusted" = "Untrusted certificate";
+"certTrust.titleChanged" = "Certificate changed";
+"certTrust.bodySelfSigned" = "This server uses a self-signed certificate. Make sure the fingerprint below matches your server before trusting it.";
+"certTrust.bodyChanged" = "The certificate for this server changed since you last trusted it. If you didn't expect this, it may indicate an attack — do not continue unless you know why it changed.";
+"certTrust.trust" = "Trust";
+"certTrust.trustAnyway" = "Trust anyway";
+"autofill.openApp" = "Open VaultGuard";
+"autofill.tryAgain" = "Try again";
+"autofill.errNotConfigured" = "VaultGuard is not signed in on this device.";
+"autofill.errLocked" = "Open VaultGuard and unlock your vault to use AutoFill.";
+"autofill.errNoCache" = "Open VaultGuard at least once to enable AutoFill.";
+"autofill.errDecode" = "Could not read the cached vault.";
+"autofill.errNoMatch" = "No matching credential found.";
+"account.dataNotRemoved" = "Some account data could not be fully removed.";
+"account.biometricNotEnabled" = "Biometric unlock was not enabled.";
+"account.biometricNotDisabled" = "Could not fully disable biometric unlock.";
+
+/* === Wave 3: cert-cancel + App Group (added) === */
+"certTrust.cancelled" = "Certificate trust was cancelled. The server was not added.";
+"account.appGroupUnavailable" = "Shared container is not configured. AutoFill cannot access your vault — check the App Group capability.";

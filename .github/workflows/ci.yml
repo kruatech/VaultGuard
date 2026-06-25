@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    name: Build & test (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Build without code signing so CI needs no certificates/provisioning.
+      - name: Build
+        run: >
+          xcodebuild build
+          -scheme VaultGuard
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
+          -quiet
+
+      - name: Test
+        run: >
+          xcodebuild test
+          -scheme VaultGuard
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
+          -quiet
+
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No committed user/signing state
+        run: |
+          if git ls-files | grep -E 'Signing\.local|xcuserdata|xcuserstate'; then
+            echo "::error::Committed signing/user-state files found"; exit 1
+          fi
+
+      - name: No force-unwrapped URL(string:)
+        run: |
+          if grep -rnE 'URL\(string: [^)]*\)!' VaultGuard --include='*.swift'; then
+            echo "::error::force-unwrapped URL(string:) found — use guard + APIError.invalidURL"; exit 1
+          fi
+
+      - name: No reintroduced legacy keychain/cache API
+        run: |
+          if grep -rnE '\.clearAll\(\)|VaultCache\.shared|hasLegacyAccount|migrateLegacy' VaultGuard --include='*.swift'; then
+            echo "::error::legacy keychain/cache symbols reintroduced"; exit 1
+          fi
+
+      - name: No misleading master-password persistence copy
+        run: |
+          if grep -rnEi 'master password saved|password will be stored|save master password' VaultGuard --include='*.swift' --include='*.strings'; then
+            echo "::error::Misleading master-password persistence copy found"; exit 1
+          fi
+
+      - name: Localizations have matching keys
+        run: |
+          python3 - <<'EOF'
+          import re
+          from pathlib import Path
+          en = set(re.findall(r'^"([^"]+)"\s*=', Path('VaultGuard/Resources/en.lproj/Localizable.strings').read_text(), re.M))
+          ru = set(re.findall(r'^"([^"]+)"\s*=', Path('VaultGuard/Resources/ru.lproj/Localizable.strings').read_text(), re.M))
+          missing_ru = sorted(en - ru)
+          missing_en = sorted(ru - en)
+          if missing_ru or missing_en:
+              print('Missing in ru:', missing_ru)
+              print('Missing in en:', missing_en)
+              raise SystemExit(1)
+          print(f'ok: {len(en)} localization keys in parity')
+          EOF
+
+      - name: Package.resolved pins Argon2Swift revision
+        run: |
+          python3 - <<'EOF'
+          import json
+          from pathlib import Path
+          expected = '53543623fefe68461b7eeea03d7f96677c2fd76d'
+          data = json.loads(Path('VaultGuard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())
+          pins = {p['identity']: p['state'] for p in data['pins']}
+          state = pins.get('argon2swift', {})
+          if state.get('revision') != expected or 'branch' in state:
+              print('argon2swift is not pinned to the audited revision:', state)
+              raise SystemExit(1)
+          print('ok: Argon2Swift is pinned to audited revision', expected)
+          EOF
+
+      - name: No unexpected branch-based dependency pins
+        run: |
+          python3 - <<'EOF'
+          import json
+          from pathlib import Path
+          # phc-winner-argon2 is intentionally branch-tracked upstream (Argon2Swift's
+          # manifest requires it), but its revision IS pinned, so the build stays
+          # deterministic. Any OTHER pin carrying a "branch" is a supply-chain regression.
+          allowed_branch = {'phc-winner-argon2'}
+          data = json.loads(Path('VaultGuard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())
+          offenders = []
+          for p in data['pins']:
+              state = p.get('state', {})
+              if 'branch' in state and p['identity'] not in allowed_branch:
+                  offenders.append((p['identity'], state.get('branch')))
+              # even the allowed one must keep a pinned revision
+              if p['identity'] in allowed_branch and not state.get('revision'):
+                  offenders.append((p['identity'], 'branch without pinned revision'))
+          if offenders:
+              for ident, br in offenders:
+                  print(f'::error::branch-pinned dependency: {ident} -> {br}')
+              raise SystemExit(1)
+          print('ok: no unexpected branch-based pins')
+          EOF

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- VaultGuard does not track users across apps/websites owned by other companies. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<!-- VaultGuard does not collect any data from this app. Vault data is end-to-end
+	     encrypted and only ever sent to the user-configured Bitwarden/Vaultwarden server;
+	     the developer receives nothing. Keep this in sync with App Store Connect App Privacy
+	     (which should be set to "Data Not Collected"). -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<!-- Required-reason APIs actually used by the app.
+	     Verified against the source: only UserDefaults (incl. @AppStorage) is used.
+	     No file-timestamp, disk-space, system-boot-time, or active-keyboard APIs are present.
+	     CA92.1 = access info from user defaults that is only accessible to the app itself.
+	     ACTION BEFORE SUBMISSION: run Xcode Product > Archive > Validate and reconcile this
+	     list with the validation/privacy report; adjust reason codes if Apple flags anything. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
