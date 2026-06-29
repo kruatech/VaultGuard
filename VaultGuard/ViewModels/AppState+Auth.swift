@@ -174,15 +174,15 @@ extension AppState {
         let display = !profileName.isEmpty ? profileName : (!profileEmail.isEmpty ? profileEmail : email)
         accounts.upsert(Account(id: accountId, serverURL: normalizedURL, email: email, profileName: display, label: label))
 
-        // Publish the vault key for the AutoFill extension while this account is unlocked.
-        if let userKey = crypto.exportUserKey() { keychain.shareVaultKey(userKey, accountId: accountId) }
-        if !SharedConfig.isAppGroupAvailable { showToast(.error(L10n.Account.appGroupUnavailable.localized)) }
+        // AutoFill cache + shared secret are published by `publishAutoFill()` during `syncVault`.
         isUnlocked = true; startAutoLockTimer(); setupSleepObservers()
     }
 
     // MARK: - Unlock (active account, via biometric)
 
     func unlockWithBiometric() async {
+        // KeePass uses its own biometric re-unlock (resolve bookmark + stored password).
+        if activeVaultKind == .keepass { await unlockKeePassWithBiometric(); return }
         isLoading = true; errorMessage = nil
         let ss = UserDefaults.standard.bool(forKey: "allowSelfSigned")
         do {
@@ -242,8 +242,7 @@ extension AppState {
                 crypto.setPrivateKey(from: tok.privateKey)
             }
 
-            try await syncVault()
-            keychain.shareVaultKey(unlock.userKey, accountId: store.accountId)
+            try await syncVault()   // -> applySync -> publishAutoFill (shares the AutoFill secret)
             isUnlocked = true; startAutoLockTimer(); setupSleepObservers()
         } catch { errorMessage = error.localizedDescription }
         isLoading = false
@@ -258,7 +257,9 @@ extension AppState {
         lock()
         rebuildActiveSession()
         accounts.setActive(accountId)
-        await unlockWithBiometric()
+        // Leave the newly selected account locked. The user unlocks it from the unlock screen
+        // (Touch ID button or master password). Auto-prompting biometric on every switch caused
+        // a spurious "authentication cancelled" message and an unexpected Touch ID popup.
     }
 
     // MARK: - Lock / Logout
@@ -266,13 +267,21 @@ extension AppState {
     func lock() {
         isUnlocked = false; ciphers = []; folders = []; collections = []; organizations = []
         selectedCipherId = nil; activeVaultId = nil; wipeCryptoSession()
+        keePassBackend = nil
+        keePassFileBookmark = nil
         repromptVerifiedCipherIds.removeAll(); pendingReprompt = nil
         autoLockTimer?.invalidate(); autoLockTimer = nil
         removeSleepObservers()
-        // Revoke AutoFill access: the shared key is only valid while unlocked.
+        // Revoke AutoFill access: the shared AutoFill secret is only valid while unlocked.
         if let id = accounts.activeAccountId {
-            do { try keychain.clearSharedVaultKey(accountId: id) }
-            catch { Log.fault("clear shared vault key on lock failed") }
+            do { try keychain.clearAutoFillSecret(accountId: id) }
+            catch { Log.fault("clear autofill secret on lock failed") }
+            do { try keychain.clearVaultKind(accountId: id) }
+            catch { Log.fault("clear vault kind on lock failed") }
+            // The AutoFill cache is sealed with a key derived from the (now-cleared) shared
+            // secret; remove the file too so nothing readable is left at rest.
+            AutoFillCache.clear(accountId: id)
+            if accounts.activeAccount?.kind == .keepass { VaultCache.forAccount(id).clear() }
         }
     }
 
@@ -285,6 +294,7 @@ extension AppState {
         var wipeFailed = false
         if let id {
             VaultCache.forAccount(id).clear() // wipe this account's cache file + key
+            AutoFillCache.clear(accountId: id)
             do { try accounts.remove(id) }    // also reassigns the active pointer
             catch { wipeFailed = true }
         }
@@ -301,7 +311,7 @@ extension AppState {
         lock()
         Task { await api.clearTokens() }
         let ids = accounts.accounts.map { $0.id }
-        for id in ids { VaultCache.forAccount(id).clear() }
+        for id in ids { VaultCache.forAccount(id).clear(); AutoFillCache.clear(accountId: id) }
         CredentialIdentityStoreManager.clear()
         var wipeFailed = false
         do { try accounts.removeAll(ids) } catch { wipeFailed = true }
@@ -317,6 +327,7 @@ extension AppState {
     func removeAccount(_ id: String) {
         if id == accounts.activeAccountId { logout(); return }
         VaultCache.forAccount(id).clear()
+        AutoFillCache.clear(accountId: id)
         do { try accounts.remove(id) }
         catch {
             Log.fault("removeAccount: secret wipe incomplete")

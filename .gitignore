@@ -15,3 +15,16 @@ xcuserdata/
 
 # Local signing (per-developer Apple Team ID — never commit)
 Config/Signing.local.xcconfig
+
+# Generated sample/review databases and local KeePass backups
+# (test fixtures under VaultGuardTests/ are tracked explicitly and unaffected)
+docs/review/
+*.kdbx.bak
+
+# XcodeGen-generated project (source of truth is project.yml).
+# Package.resolved is kept tracked for dependency pinning / CI checks.
+VaultGuard.xcodeproj/project.pbxproj
+VaultGuard.xcodeproj/xcshareddata/xcschemes/
+
+# Local release verification output
+vaultguard_release_evidence.txt

@@ -2,13 +2,23 @@ import SwiftUI
 
 struct MainView: View {
     @EnvironmentObject var appState: AppState
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
-        NavigationSplitView(
-            sidebar: { SidebarView() },
-            content: { ItemsListView() },
-            detail: { DetailView() }
-        )
+        NavigationSplitView {
+            SidebarView()
+        } detail: {
+            VStack(spacing: 0) {
+                unifiedHeader
+                Divider()
+                HSplitView {
+                    ItemsListView()
+                        .frame(minWidth: 280, idealWidth: 340, maxWidth: 480)
+                    DetailView()
+                        .frame(minWidth: 360, maxWidth: .infinity)
+                }
+            }
+        }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $appState.showEditSheet) {
             EditItemView(cipher: appState.editingCipher).environmentObject(appState)
@@ -16,10 +26,8 @@ struct MainView: View {
         .sheet(isPresented: $appState.showGenerator) {
             GeneratorView().environmentObject(appState)
         }
-        .sheet(isPresented: $appState.showSettings) {
-            SettingsView()
-                .environmentObject(appState)
-                .environmentObject(appState.accounts)
+        .sheet(isPresented: $appState.showSends) {
+            SendsView().environmentObject(appState)
         }
         .confirmationDialog(
             L10n.DeleteConfirm.title.localized(appState.deletingCipher?.name ?? ""),
@@ -34,25 +42,68 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newItem)) { _ in
             appState.startNewItem()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in searchFocused = true }
         // Keyboard shortcuts
         .background(KeyboardShortcutView(appState: appState))
     }
 
+    // MARK: - Unified header (spans list + detail)
+
+    private var unifiedHeader: some View {
+        HStack(spacing: VGSpacing.l) {
+            VStack(alignment: .leading, spacing: VGSpacing.xxs) {
+                Text(appState.filterTitle).font(VGFont.largeTitle).lineLimit(1)
+                Text(L10n.Items.itemsCount.localized(appState.filteredCiphers.count, appState.activeVaultName))
+                    .font(VGFont.label).foregroundColor(VGColor.secondary).lineLimit(1)
+            }
+
+            Spacer(minLength: VGSpacing.l)
+
+            HStack(spacing: VGSpacing.s) {
+                Image(systemName: "magnifyingglass").foregroundColor(VGColor.secondary).font(VGFont.label)
+                TextField("\(L10n.search.localized)…", text: $appState.searchText)
+                    .textFieldStyle(.plain).font(VGFont.body).focused($searchFocused)
+                if !appState.searchText.isEmpty {
+                    Button(action: { appState.searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(VGColor.secondary).font(VGFont.caption)
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, VGSpacing.m).frame(height: 28).frame(maxWidth: 320)
+            .background(VGColor.surface).cornerRadius(VGRadius.medium)
+
+            HStack(spacing: VGSpacing.s) {
+                if appState.filter != .trash {
+                    Button(action: { appState.startNewItem() }) {
+                        Label(L10n.Items.newItem.localized, systemImage: "plus").font(VGFont.labelMedium)
+                    }.buttonStyle(.borderedProminent).controlSize(.small).handCursor()
+                }
+                Button(action: { appState.sort = appState.sort == .name ? .modified : .name }) {
+                    Label(appState.sort.displayName, systemImage: "arrow.up.arrow.down").font(VGFont.labelMedium)
+                }.buttonStyle(.bordered).controlSize(.small).handCursor()
+                Button(action: { Task { await appState.refresh() } }) {
+                    Image(systemName: "arrow.clockwise").font(VGFont.label)
+                }.buttonStyle(.bordered).controlSize(.small).handCursor()
+            }
+        }
+        .padding(.horizontal, VGSpacing.xxl).padding(.vertical, VGSpacing.l)
+    }
+
     @ViewBuilder
     private var toastOverlay: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: VGSpacing.s) {
             ForEach(appState.toasts) { toast in
-                HStack(spacing: 6) {
-                    Image(systemName: toast.icon).font(.system(size: 12, weight: .bold))
-                    Text(toast.text).font(.system(size: 13, weight: .medium))
+                HStack(spacing: VGSpacing.s) {
+                    Image(systemName: toast.icon).font(VGFont.labelBold)
+                    Text(toast.text).font(VGFont.bodyMedium)
                 }
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, VGSpacing.xl).padding(.vertical, VGSpacing.m)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: VGRadius.large))
                 .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                 .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
             }
         }
-        .padding(16).animation(.spring(response: 0.3), value: appState.toasts.count)
+        .padding(VGSpacing.xxl).animation(.spring(response: 0.3), value: appState.toasts.count)
     }
 }
 

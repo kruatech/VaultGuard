@@ -21,9 +21,10 @@ enum AutoFillError: LocalizedError {
     }
 }
 
-/// Reads the active account's shared, encrypted vault cache, unlocks it with that
-/// account's master password (behind biometric), and exposes matching login credentials
-/// to the extension.
+/// Reads the active account's minimal AutoFill cache, unsealing it with a key derived
+/// from the short-lived AutoFill secret the main app publishes while the vault is
+/// unlocked, and exposes matching login credentials to the extension. The extension
+/// never sees the master password, the real vault/user key, or any session token.
 ///
 /// Scoped to the active account (`KeychainService.activeAccountId`). Serving credentials
 /// aggregated across all accounts would require unlocking each one separately and is left
@@ -32,43 +33,38 @@ enum AutoFillError: LocalizedError {
 final class AutoFillVault {
     static let shared = AutoFillVault()
 
-    private let crypto = CryptoService()
     private let keychain = KeychainService.shared
     private(set) var credentials: [AutoFillCredential] = []
 
-    /// Variant B: the main app shares the vault key only while it is unlocked. If the key is
-    /// absent the vault is locked, and the extension tells the user to open VaultGuard — no
-    /// biometric prompt happens inside the extension.
+    /// Open the minimal AutoFill cache for the active account. Requires a valid (non-expired)
+    /// AutoFill secret payload: the TTL is enforced inside `KeychainService.autoFillSecret`,
+    /// which returns nil (and cleans up) when the secret is absent / expired / malformed /
+    /// legacy. The extension derives the cache key from that secret and never reads the app's
+    /// session secrets (`cacheKey`, `encryptedKey`, tokens).
     func unlock() async throws {
         guard let accountId = keychain.activeAccountId else { throw AutoFillError.notConfigured }
-        guard keychain.account(accountId).encryptedKey != nil else { throw AutoFillError.notConfigured }
-        guard let userKey = keychain.sharedVaultKey(accountId: accountId) else { throw AutoFillError.locked }
+        guard let secret = keychain.autoFillSecret(accountId: accountId) else { throw AutoFillError.locked }
+        let kind = keychain.vaultKind(accountId: accountId) ?? "server"
 
-        crypto.restoreSession(userKey: userKey, passwordHash: "")
-
-        guard let data = VaultCache.forAccount(accountId).load() else { throw AutoFillError.noCache }
-        guard let sync = try? JSONDecoder().decode(SyncResponse.self, from: data) else { throw AutoFillError.decodeFailed }
-
-        if let pk = sync.profile?.privateKey { crypto.setPrivateKey(from: pk) }
-        if let orgs = sync.profile?.organizations, !orgs.isEmpty { crypto.setOrganizationKeys(orgs) }
-
-        credentials = (sync.ciphers ?? []).compactMap { c in
-            guard c.deletedDate == nil, let id = c.id, let login = c.login,
-                  let user = crypto.decrypt(login.username, orgId: c.organizationId), !user.isEmpty,
-                  let pass = crypto.decrypt(login.password, orgId: c.organizationId), !pass.isEmpty else { return nil }
-            let uris = (login.uris ?? []).compactMap { crypto.decrypt($0.uri, orgId: c.organizationId) }
-            let name = crypto.decrypt(c.name, orgId: c.organizationId) ?? user
-            return AutoFillCredential(recordIdentifier: id, name: name, user: user, password: pass, uris: uris)
+        switch AutoFillCache.open(secret: secret, accountId: accountId, kind: kind) {
+        case .records(let records):
+            credentials = records.map {
+                AutoFillCredential(recordIdentifier: $0.id, name: $0.name,
+                                   user: $0.user, password: $0.password, uris: $0.uris)
+            }
+        case .missing:
+            credentials = []
+            throw AutoFillError.noCache
+        case .corrupted:
+            credentials = []
+            throw AutoFillError.decodeFailed
         }
     }
 
     func lock() {
-        crypto.clearKeys()
         credentials = []
     }
 
-    /// Credentials whose URIs match any of the requested service identifiers by host
-    /// (exact or subdomain on a label boundary), never by substring.
     func matches(for serviceIdentifiers: [ASCredentialServiceIdentifier]) -> [AutoFillCredential] {
         let requestHosts = serviceIdentifiers.compactMap { Self.host(from: $0.identifier) }
         guard !requestHosts.isEmpty else { return credentials }
@@ -83,7 +79,14 @@ final class AutoFillVault {
     func credential(for identity: ASPasswordCredentialIdentity) -> AutoFillCredential? {
         if let rid = identity.recordIdentifier,
            let match = credentials.first(where: { $0.recordIdentifier == rid }) { return match }
-        return credentials.first { $0.user == identity.user }
+        // Fallback for a missing/stale recordIdentifier: match by username, but ONLY among
+        // credentials whose URIs match the identity's service host. A bare username match
+        // across the whole vault could fill site A's password into site B when usernames
+        // coincide — never do that. Fail closed when the service host is unparseable
+        // (matches(for:) would otherwise return the full list for an empty host set).
+        guard Self.host(from: identity.serviceIdentifier.identifier) != nil else { return nil }
+        let serviceScoped = matches(for: [identity.serviceIdentifier])
+        return serviceScoped.first { $0.user == identity.user }
     }
 
     /// Normalized host from a full URL or a bare-host identifier; nil if unparseable.

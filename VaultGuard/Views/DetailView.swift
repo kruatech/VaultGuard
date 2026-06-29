@@ -11,9 +11,9 @@ struct DetailView: View {
             CipherDetailView(cipher: cipher).id(cipher.id)
         } else {
             VStack(spacing: 10) {
-                Image(systemName: "lock.fill").font(.system(size: 48, weight: .ultraLight)).foregroundColor(Color(NSColor.quaternaryLabelColor))
-                Text(L10n.Detail.selectItem.localized).font(.system(size: 16, weight: .semibold)).foregroundColor(.secondary)
-                Text(L10n.Detail.orCreateNew.localized).font(.system(size: 13)).foregroundColor(Color(NSColor.tertiaryLabelColor))
+                Image(systemName: "lock.fill").font(VGFont.emptyGlyphLarge).foregroundColor(VGColor.quaternary)
+                Text(L10n.Detail.selectItem.localized).font(VGFont.title2).foregroundColor(VGColor.secondary)
+                Text(L10n.Detail.orCreateNew.localized).font(VGFont.body).foregroundColor(VGColor.tertiary)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -32,6 +32,7 @@ struct CipherDetailView: View {
     @State private var loadingAttachmentId: String?
     @State private var attachmentToDelete: CipherAttachment?
     @State private var isDragOver = false
+    @State private var showPermanentDeleteConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,7 +50,9 @@ struct CipherDetailView: View {
                     if let url = cipher.displayUrl { urlSection(url) }
 
                     HStack(spacing: 6) {
-                        TagBadge(text: cipher.type.localizedName, color: .accentColor)
+                        if appState.activeVaultKind != .keepass {
+                            TagBadge(text: cipher.type.localizedName, color: .accentColor)
+                        }
                         if let folderId = cipher.folderId, let folder = appState.folders.first(where: { $0.id == folderId }) {
                             TagBadge(text: folder.name, color: .purple)
                         }
@@ -59,9 +62,9 @@ struct CipherDetailView: View {
                     if let notes = cipher.notes, !notes.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             SectionLabel(L10n.Detail.notes.localized)
-                            Text(notes).font(.system(size: 13)).foregroundColor(.secondary).padding(10)
+                            Text(notes).font(VGFont.body).foregroundColor(VGColor.secondary).padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(NSColor.controlBackgroundColor)).cornerRadius(8).textSelection(.enabled)
+                                .background(VGColor.surface).cornerRadius(VGRadius.medium).textSelection(.enabled)
                         }
                     }
 
@@ -87,6 +90,14 @@ struct CipherDetailView: View {
             }
             Button(L10n.cancel.localized, role: .cancel) { attachmentToDelete = nil }
         }
+        .confirmationDialog(L10n.Detail.deleteForeverConfirm.localized,
+                            isPresented: $showPermanentDeleteConfirm,
+                            titleVisibility: .visible) {
+            Button(L10n.Detail.deleteForever.localized, role: .destructive) {
+                Task { await appState.permanentlyDeleteKeePassCipher(cipher) }
+            }
+            Button(L10n.cancel.localized, role: .cancel) { }
+        }
         .sheet(item: $previewingAttachment) { attachment in
             AttachmentPreviewSheet(attachment: attachment, data: previewData,
                 onDismiss: { previewingAttachment = nil; previewData = nil },
@@ -104,28 +115,28 @@ struct CipherDetailView: View {
             if appState.isUploadingAttachments {
                 VStack(spacing: 8) {
                     ProgressView(value: appState.attachmentUploadProgress)
-                    Text(L10n.DragDrop.uploading.localized).font(.system(size: 12)).foregroundColor(.secondary)
+                    Text(L10n.DragDrop.uploading.localized).font(VGFont.label).foregroundColor(VGColor.secondary)
                 }
                 .padding(16)
-                .background(Color(NSColor.controlBackgroundColor)).cornerRadius(10)
+                .background(VGColor.surface).cornerRadius(VGRadius.large)
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "arrow.down.doc.fill")
-                        .font(.system(size: 24, weight: .light))
-                        .foregroundColor(isDragOver ? .accentColor : Color(NSColor.tertiaryLabelColor))
+                        .font(VGFont.glyphLight)
+                        .foregroundColor(isDragOver ? .accentColor : VGColor.tertiary)
                     Text(isDragOver ? L10n.DragDrop.dropFiles.localized : L10n.DragDrop.dropOrChoose.localized)
-                        .font(.system(size: 12))
-                        .foregroundColor(isDragOver ? .accentColor : Color(NSColor.tertiaryLabelColor))
+                        .font(VGFont.label)
+                        .foregroundColor(isDragOver ? .accentColor : VGColor.tertiary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: VGRadius.large)
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 3]))
                         .foregroundColor(isDragOver ? .accentColor : Color.secondary.opacity(0.3))
                 )
                 .background(isDragOver ? Color.accentColor.opacity(0.05) : Color.clear)
-                .cornerRadius(10)
+                .cornerRadius(VGRadius.large)
                 .contentShape(Rectangle())
                 .onTapGesture { chooseFilesToAttach() }
                 .handCursor()
@@ -171,22 +182,30 @@ struct CipherDetailView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            RoundedRectangle(cornerRadius: 12).fill(accentGradient).frame(width: 44, height: 44)
-                .overlay { Text(cipher.initials).font(.system(size: 18, weight: .bold)).foregroundColor(.white) }
+            CipherAvatar(cipher: cipher, size: 44, glyph: 22, corner: 12, initialsFont: VGFont.largeTitle)
             VStack(alignment: .leading, spacing: 2) {
-                Text(cipher.name).font(.system(size: 18, weight: .bold))
+                Text(cipher.name).font(VGFont.largeTitle)
                 if let host = cipher.hostname {
                     Button(action: { if let url = cipher.displayUrl.flatMap({ URL(string: $0) }) { NSWorkspace.shared.open(url) } }) {
                         HStack(spacing: 3) {
-                            Image(systemName: "arrow.up.right.square").font(.system(size: 11))
+                            Image(systemName: "arrow.up.right.square").font(VGFont.caption)
                             Text(host)
-                        }.font(.system(size: 12)).foregroundColor(.accentColor)
+                        }.font(VGFont.label).foregroundColor(VGColor.accent)
                     }.buttonStyle(.plain).handCursor()
                 }
             }
             Spacer()
             HStack(spacing: 4) {
-                DetailActionButton(icon: "square.and.pencil") { appState.editingCipher = cipher; appState.showEditSheet = true }
+                if appState.activeVaultKind == .keepass, cipher.deletedDate != nil {
+                    DetailActionButton(icon: "arrow.uturn.backward") {
+                        Task { await appState.restoreKeePassCipher(cipher) }
+                    }.help(L10n.Detail.restore.localized)
+                    DetailActionButton(icon: "trash", danger: true) {
+                        showPermanentDeleteConfirm = true
+                    }.help(L10n.Detail.deleteForever.localized)
+                } else {
+                    DetailActionButton(icon: "square.and.pencil") { appState.guardReprompt(cipher) { appState.editingCipher = cipher; appState.showEditSheet = true } }
+                }
             }
         }.padding(.horizontal, 24).padding(.vertical, 16)
     }
@@ -197,12 +216,12 @@ struct CipherDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             SectionLabel(L10n.Detail.password.localized)
             HStack(spacing: 8) {
-                Text(showPassword ? password : "••••••••••••••••").font(.system(size: 13, design: .monospaced))
+                Text(showPassword ? password : "••••••••••••••••").font(VGFont.bodyMono)
                     .foregroundColor(showPassword ? .primary : .secondary).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: { appState.guardReprompt(cipher) { showPassword.toggle() } }) { Image(systemName: showPassword ? "eye.slash" : "eye").font(.system(size: 13)).foregroundColor(.secondary) }.buttonStyle(.plain).handCursor()
-                Button(action: { appState.guardReprompt(cipher) { appState.copyToClipboard(password) } }) { Image(systemName: "doc.on.doc").font(.system(size: 13)).foregroundColor(.secondary) }.buttonStyle(.plain).handCursor()
-            }.padding(10).background(Color(NSColor.controlBackgroundColor)).cornerRadius(8)
+                Button(action: { appState.guardReprompt(cipher) { showPassword.toggle() } }) { Image(systemName: showPassword ? "eye.slash" : "eye").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help((showPassword ? L10n.Editor.hide : L10n.Editor.show).localized)
+                Button(action: { appState.guardReprompt(cipher) { appState.copyToClipboard(password) } }) { Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+            }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
 
             let strength = PasswordStrength.evaluate(password)
             HStack(spacing: 8) {
@@ -212,13 +231,13 @@ struct CipherDetailView: View {
                         RoundedRectangle(cornerRadius: 2).fill(strengthColor(strength)).frame(width: geo.size.width * strength.fraction, height: 4)
                     }
                 }.frame(height: 4)
-                Text(strength.label).font(.system(size: 11, weight: .medium)).foregroundColor(strengthColor(strength))
+                Text(strength.label).font(VGFont.captionMedium).foregroundColor(strengthColor(strength))
             }
         }
     }
 
     private func strengthColor(_ s: PasswordStrength) -> Color {
-        switch s.score { case 1: return .red; case 2: return .orange; case 3: return .yellow; case 4: return .green; default: return .secondary }
+        switch s.score { case 1: return VGColor.danger; case 2: return VGColor.warning; case 3: return .yellow; case 4: return VGColor.success; default: return VGColor.secondary }
     }
 
     // MARK: - Card
@@ -247,16 +266,16 @@ struct CipherDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     SectionLabel(L10n.Identity.address1.localized)
                     HStack(spacing: 8) {
-                        Text(identity.fullAddress).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                        Text(identity.fullAddress).font(VGFont.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                         Button(action: { appState.copyToClipboard(identity.fullAddress) }) {
-                            Image(systemName: "doc.on.doc").font(.system(size: 13)).foregroundColor(.secondary)
-                        }.buttonStyle(.plain).handCursor()
-                    }.padding(10).background(Color(NSColor.controlBackgroundColor)).cornerRadius(8)
+                            Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary)
+                        }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+                    }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
                 }
             }
-            if let ssn = identity.ssn, !ssn.isEmpty { FieldRow(label: L10n.Identity.ssn.localized, value: ssn, mono: true) { appState.copyToClipboard(ssn) } }
-            if let passport = identity.passportNumber, !passport.isEmpty { FieldRow(label: L10n.Identity.passport.localized, value: passport, mono: true) { appState.copyToClipboard(passport) } }
-            if let license = identity.licenseNumber, !license.isEmpty { FieldRow(label: L10n.Identity.license.localized, value: license, mono: true) { appState.copyToClipboard(license) } }
+            if let ssn = identity.ssn, !ssn.isEmpty { FieldRow(label: L10n.Identity.ssn.localized, value: ssn, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(ssn) } } }
+            if let passport = identity.passportNumber, !passport.isEmpty { FieldRow(label: L10n.Identity.passport.localized, value: passport, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(passport) } } }
+            if let license = identity.licenseNumber, !license.isEmpty { FieldRow(label: L10n.Identity.license.localized, value: license, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(license) } } }
         }
     }
 
@@ -266,14 +285,14 @@ struct CipherDetailView: View {
         VStack(alignment: .leading, spacing: 4) {
             SectionLabel(L10n.Detail.url.localized)
             HStack(spacing: 8) {
-                Text(url).font(.system(size: 13)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                Text(url).font(VGFont.body).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                 Button(action: { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }) {
-                    Image(systemName: "arrow.up.right.square").font(.system(size: 13)).foregroundColor(.secondary)
-                }.buttonStyle(.plain).handCursor()
+                    Image(systemName: "arrow.up.right.square").font(VGFont.body).foregroundColor(VGColor.secondary)
+                }.buttonStyle(.plain).handCursor().help(L10n.Items.openUrl.localized)
                 Button(action: { appState.copyToClipboard(url) }) {
-                    Image(systemName: "doc.on.doc").font(.system(size: 13)).foregroundColor(.secondary)
-                }.buttonStyle(.plain).handCursor()
-            }.padding(10).background(Color(NSColor.controlBackgroundColor)).cornerRadius(8)
+                    Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary)
+                }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+            }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
         }
     }
 
@@ -286,9 +305,9 @@ struct CipherDetailView: View {
                 VStack(spacing: 6) { ForEach(fields) { field in customFieldRow(field) } }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "square.stack.3d.up").font(.system(size: 12))
-                    Text(fieldsExpanded ? L10n.Detail.customFields.localized : "\(L10n.Detail.customFields.localized) · \(fields.count)").font(.system(size: 12, weight: .semibold))
-                }.foregroundColor(.secondary)
+                    Image(systemName: "square.stack.3d.up").font(VGFont.label)
+                    Text(fieldsExpanded ? L10n.Detail.customFields.localized : "\(L10n.Detail.customFields.localized) · \(fields.count)").font(VGFont.labelEmphasis)
+                }.foregroundColor(VGColor.secondary)
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { fieldsExpanded.toggle() } }
                 .handCursor()
@@ -298,26 +317,26 @@ struct CipherDetailView: View {
 
     private func customFieldRow(_ field: CipherField) -> some View {
         HStack(spacing: 8) {
-            Text(field.name.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundColor(Color(NSColor.tertiaryLabelColor)).frame(minWidth: 60, alignment: .leading)
+            Text(field.name.uppercased()).font(VGFont.caption2Emphasis).foregroundColor(VGColor.tertiary).frame(minWidth: 60, alignment: .leading)
             if field.type == .boolean {
-                Text(field.value == "true" ? "misc.yes".localized : "misc.no".localized).font(.system(size: 12, weight: .semibold)).foregroundColor(field.value == "true" ? .green : .secondary)
+                Text(field.value == "true" ? "misc.yes".localized : "misc.no".localized).font(VGFont.labelEmphasis).foregroundColor(field.value == "true" ? VGColor.success : VGColor.secondary)
             } else if field.type == .hidden {
                 let isVisible = showSecretFields.contains(field.id.uuidString)
-                Text(isVisible ? field.value : "••••••••").font(.system(size: 12, design: .monospaced)).foregroundColor(isVisible ? .primary : .secondary)
+                Text(isVisible ? field.value : "••••••••").font(VGFont.labelMono).foregroundColor(isVisible ? .primary : .secondary)
                 Button(action: { appState.guardReprompt(cipher) { if isVisible { showSecretFields.remove(field.id.uuidString) } else { showSecretFields.insert(field.id.uuidString) } } }) {
-                    Image(systemName: isVisible ? "eye.slash" : "eye").font(.system(size: 11)).foregroundColor(.secondary)
-                }.buttonStyle(.plain).handCursor()
+                    Image(systemName: isVisible ? "eye.slash" : "eye").font(VGFont.caption).foregroundColor(VGColor.secondary)
+                }.buttonStyle(.plain).handCursor().help((isVisible ? L10n.Editor.hide : L10n.Editor.show).localized)
             } else {
-                Text(field.value).font(.system(size: 12, design: .monospaced)).lineLimit(1)
+                Text(field.value).font(VGFont.labelMono).lineLimit(1)
             }
             Spacer()
             Button(action: {
                 if field.type == .hidden { appState.guardReprompt(cipher) { appState.copyToClipboard(field.value) } }
                 else { appState.copyToClipboard(field.value) }
             }) {
-                Image(systemName: "doc.on.doc").font(.system(size: 11)).foregroundColor(.secondary)
-            }.buttonStyle(.plain).handCursor()
-        }.padding(8).background(Color(NSColor.controlBackgroundColor)).cornerRadius(6)
+                Image(systemName: "doc.on.doc").font(VGFont.caption).foregroundColor(VGColor.secondary)
+            }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+        }.padding(8).background(VGColor.surface).cornerRadius(VGRadius.small)
     }
 
     // MARK: - Attachments
@@ -329,9 +348,9 @@ struct CipherDetailView: View {
                 VStack(spacing: 6) { ForEach(attachments) { att in attachmentRow(att) } }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "paperclip").font(.system(size: 12))
-                    Text(attachmentsExpanded ? L10n.Detail.attachments.localized : "\(L10n.Detail.attachments.localized) · \(attachments.count)").font(.system(size: 12, weight: .semibold))
-                }.foregroundColor(.secondary)
+                    Image(systemName: "paperclip").font(VGFont.label)
+                    Text(attachmentsExpanded ? L10n.Detail.attachments.localized : "\(L10n.Detail.attachments.localized) · \(attachments.count)").font(VGFont.labelEmphasis)
+                }.foregroundColor(VGColor.secondary)
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { attachmentsExpanded.toggle() } }
                 .handCursor()
@@ -344,7 +363,7 @@ struct CipherDetailView: View {
             Group {
                 if AppState.isPreviewable(fileName: att.fileName) {
                     // Icon + name + size act as a single clickable area that opens the preview.
-                    Button(action: { Task { await loadAndPreview(att) } }) {
+                    Button(action: { appState.guardReprompt(cipher) { Task { await loadAndPreview(att) } } }) {
                         HStack(spacing: 10) {
                             attachmentIcon(att)
                             attachmentLabel(att)
@@ -362,26 +381,26 @@ struct CipherDetailView: View {
             if loadingAttachmentId == att.id { ProgressView().controlSize(.small) }
             else {
                 if AppState.isPreviewable(fileName: att.fileName) {
-                    Button(action: { Task { await loadAndPreview(att) } }) { Image(systemName: "eye").font(.system(size: 13)).foregroundColor(.accentColor) }.buttonStyle(.plain).handCursor()
+                    Button(action: { appState.guardReprompt(cipher) { Task { await loadAndPreview(att) } } }) { Image(systemName: "eye").font(VGFont.body).foregroundColor(VGColor.accent) }.buttonStyle(.plain).handCursor().help(L10n.preview.localized)
                 }
-                Button(action: { Task { await appState.downloadAttachment(cipher: cipher, attachment: att) } }) { Image(systemName: "arrow.down.circle").font(.system(size: 13)).foregroundColor(.secondary) }.buttonStyle(.plain).handCursor()
-                Button(action: { attachmentToDelete = att }) { Image(systemName: "trash").font(.system(size: 13)).foregroundColor(.red) }.buttonStyle(.plain).handCursor()
+                Button(action: { appState.guardReprompt(cipher) { Task { await appState.downloadAttachment(cipher: cipher, attachment: att) } } }) { Image(systemName: "arrow.down.circle").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help(L10n.download.localized)
+                Button(action: { attachmentToDelete = att }) { Image(systemName: "trash").font(VGFont.body).foregroundColor(VGColor.danger) }.buttonStyle(.plain).handCursor()
                     .help(L10n.delete.localized)
             }
-        }.padding(8).background(Color(NSColor.controlBackgroundColor)).cornerRadius(6)
+        }.padding(8).background(VGColor.surface).cornerRadius(VGRadius.small)
     }
 
     private func attachmentIcon(_ att: CipherAttachment) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.controlBackgroundColor)).frame(width: 34, height: 34)
-            Image(systemName: fileIcon(for: att.fileName)).font(.system(size: 15)).foregroundColor(AppState.isPreviewable(fileName: att.fileName) ? .accentColor : .secondary)
+            RoundedRectangle(cornerRadius: VGRadius.small).fill(VGColor.surface).frame(width: 34, height: 34)
+            Image(systemName: fileIcon(for: att.fileName)).font(VGFont.subheadline).foregroundColor(AppState.isPreviewable(fileName: att.fileName) ? .accentColor : .secondary)
         }
     }
 
     private func attachmentLabel(_ att: CipherAttachment) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(att.fileName ?? "misc.attachment".localized).font(.system(size: 12, weight: .medium)).foregroundColor(.primary).lineLimit(1)
-            Text(att.sizeName ?? "").font(.system(size: 10)).foregroundColor(.secondary)
+            Text(att.fileName ?? "misc.attachment".localized).font(VGFont.labelMedium).foregroundColor(VGColor.primary).lineLimit(1)
+            Text(att.sizeName ?? "").font(VGFont.caption2).foregroundColor(VGColor.secondary)
         }
     }
 
@@ -409,15 +428,6 @@ struct CipherDetailView: View {
             if cipher.login?.password != nil { MetaItem(label: L10n.Detail.passwordAge.localized, value: cipher.revisionDate?.daysAgoString ?? "—") }
         }.padding(.top, 12)
     }
-
-    private var accentGradient: LinearGradient {
-        let colors: [Color] = { switch cipher.accentColorName {
-        case "blue": return [.blue, .cyan]; case "green": return [.green, .mint]
-        case "orange": return [.orange, .yellow]; case "purple": return [.purple, .pink]
-        case "red": return [.red, .orange]; default: return [.blue, .cyan]
-        } }()
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
 }
 
 // MARK: - Attachment Preview Sheet
@@ -429,11 +439,11 @@ struct AttachmentPreviewSheet: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(attachment.fileName ?? "misc.attachment".localized).font(.system(size: 15, weight: .bold)).lineLimit(1)
-                    if let size = attachment.sizeName { Text(size).font(.system(size: 11)).foregroundColor(.secondary) }
+                    Text(attachment.fileName ?? "misc.attachment".localized).font(VGFont.title3Bold).lineLimit(1)
+                    if let size = attachment.sizeName { Text(size).font(VGFont.caption).foregroundColor(VGColor.secondary) }
                 }
                 Spacer()
-                Button(action: onDismiss) { Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary) }.buttonStyle(.plain).handCursor()
+                Button(action: onDismiss) { Image(systemName: "xmark").font(VGFont.bodyEmphasis).foregroundColor(VGColor.secondary).frame(width: 26, height: 26).background(VGColor.surface.opacity(0.6)).clipShape(Circle()) }.buttonStyle(.plain).handCursor().help(L10n.close.localized)
             }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 10)
             Divider()
             if let data = data {
@@ -441,10 +451,10 @@ struct AttachmentPreviewSheet: View {
                     if let nsImage = NSImage(data: data) {
                         ZoomableImageView(image: nsImage)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color(NSColor.controlBackgroundColor))
+                            .background(VGColor.surface)
                     } else {
-                        Text("misc.cannotOpenFile".localized).foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color(NSColor.controlBackgroundColor))
+                        Text("misc.cannotOpenFile".localized).foregroundColor(VGColor.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(VGColor.surface)
                     }
                 } else if AppState.isPDF(fileName: attachment.fileName) {
                     PDFKitView(data: data).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -452,26 +462,21 @@ struct AttachmentPreviewSheet: View {
                     ZipPreviewView(data: data).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 10) {
-                        Image(systemName: "doc.questionmark").font(.system(size: 48, weight: .ultraLight)).foregroundColor(.secondary)
-                        Text("misc.previewUnavailable".localized).font(.system(size: 14)).foregroundColor(.secondary)
+                        Image(systemName: "doc.questionmark").font(VGFont.emptyGlyphLarge).foregroundColor(VGColor.secondary)
+                        Text("misc.previewUnavailable".localized).font(VGFont.bodyLarge).foregroundColor(VGColor.secondary)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else { ProgressView(L10n.loading.localized).frame(maxWidth: .infinity, maxHeight: .infinity) }
             Divider()
-            HStack(spacing: 10) {
+            HStack(spacing: VGSpacing.l) {
                 Spacer()
-                Button(action: onDismiss) {
-                    Text(L10n.close.localized).font(.system(size: 13, weight: .medium)).foregroundColor(.primary)
-                        .padding(.horizontal, 16).padding(.vertical, 7)
-                        .background(Color(NSColor.controlBackgroundColor)).cornerRadius(7)
-                }.buttonStyle(.plain).keyboardShortcut(.escape).handCursor()
+                Button(L10n.close.localized) { onDismiss() }
+                    .keyboardShortcut(.escape).handCursor()
                 Button(action: onSave) {
-                    Label(L10n.save.localized, systemImage: "arrow.down.circle").font(.system(size: 13, weight: .medium)).foregroundColor(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 7)
-                        .background(Color.accentColor).cornerRadius(7)
-                }.buttonStyle(.plain).handCursor()
+                    Label(L10n.save.localized, systemImage: "arrow.down.circle")
+                }.buttonStyle(.borderedProminent).handCursor()
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+            .padding(.horizontal, VGSpacing.xxxl).padding(.vertical, VGSpacing.l)
         }.frame(minWidth: 600, maxWidth: 800, minHeight: 500, maxHeight: 700)
     }
 }
@@ -548,27 +553,28 @@ struct TOTPSectionView: View {
     let cipher: VaultCipher
     @EnvironmentObject var appState: AppState
     @State private var code = ""; @State private var remaining = 30; @State private var period = 30
+    @State private var revealed = false   // reveal masked TOTP only after reprompt this view
     private let totp = TOTPService.shared
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    private var totpColor: Color { remaining <= 5 ? .red : .accentColor }
+    private var totpColor: Color { remaining <= 5 ? VGColor.danger : VGColor.accent }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(L10n.Detail.totp.localized)
             HStack(spacing: 12) {
-                Text(code).font(.system(size: 24, weight: .semibold, design: .monospaced)).foregroundColor(totpColor).tracking(3)
+                Text((revealed || cipher.reprompt != 1) ? code : "••••••").font(VGFont.codeDisplay).foregroundColor(totpColor).tracking(3)
                 Spacer()
                 ZStack {
                     Circle().stroke(totpColor.opacity(0.15), lineWidth: 3)
                     Circle().trim(from: 0, to: Double(remaining) / Double(max(period, 1)))
                         .stroke(totpColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(-90)).scaleEffect(x: -1, y: 1)
-                    Text("\(remaining)").font(.system(size: 11, weight: .bold)).foregroundColor(totpColor)
+                    Text("\(remaining)").font(VGFont.captionBold).foregroundColor(totpColor)
                 }.frame(width: 34, height: 34)
-            }.padding(12).background(totpColor.opacity(0.06)).cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(totpColor.opacity(0.1), lineWidth: 1))
+            }.padding(12).background(totpColor.opacity(0.06)).cornerRadius(VGRadius.large)
+            .overlay(RoundedRectangle(cornerRadius: VGRadius.large).stroke(totpColor.opacity(0.1), lineWidth: 1))
             .contentShape(Rectangle())
-            .onTapGesture { appState.guardReprompt(cipher) { appState.copyToClipboard(code.replacingOccurrences(of: " ", with: "")) } }
+            .onTapGesture { appState.guardReprompt(cipher) { revealed = true; appState.copyToClipboard(code.replacingOccurrences(of: " ", with: "")) } }
             .handCursor()
         }
         .onAppear { period = totp.period(for: secret); update() }.onReceive(timer) { _ in update() }
@@ -584,27 +590,27 @@ struct FieldRow: View {
         VStack(alignment: .leading, spacing: 4) {
             SectionLabel(label)
             HStack(spacing: 8) {
-                Text(value).font(mono ? .system(size: 13, design: .monospaced) : .system(size: 13)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                Button(action: onCopy) { Image(systemName: "doc.on.doc").font(.system(size: 13)).foregroundColor(.secondary) }.buttonStyle(.plain).handCursor()
-            }.padding(10).background(Color(NSColor.controlBackgroundColor)).cornerRadius(8)
+                Text(value).font(mono ? VGFont.bodyMono : VGFont.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                Button(action: onCopy) { Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+            }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
         }
     }
 }
 
 struct SectionLabel: View {
     let text: String; init(_ text: String) { self.text = text }
-    var body: some View { Text(text.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundColor(Color(NSColor.tertiaryLabelColor)).tracking(0.5) }
+    var body: some View { Text(text.uppercased()).font(VGFont.caption2Emphasis).foregroundColor(VGColor.tertiary).tracking(0.5) }
 }
 
 struct TagBadge: View {
     let text: String; let color: Color
-    var body: some View { Text(text).font(.system(size: 11, weight: .medium)).foregroundColor(color).padding(.horizontal, 10).padding(.vertical, 4).background(color.opacity(0.1)).cornerRadius(6) }
+    var body: some View { Text(text).font(VGFont.captionMedium).foregroundColor(color).padding(.horizontal, 10).padding(.vertical, 4).background(color.opacity(0.1)).cornerRadius(VGRadius.small) }
 }
 
 struct MetaItem: View {
     let label: String; let value: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) { Text(label).font(.system(size: 10)).foregroundColor(Color(NSColor.tertiaryLabelColor)); Text(value).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary) }
+        VStack(alignment: .leading, spacing: 2) { Text(label).font(VGFont.caption2).foregroundColor(VGColor.tertiary); Text(value).font(VGFont.captionMedium).foregroundColor(VGColor.secondary) }
     }
 }
 
@@ -612,8 +618,9 @@ struct DetailActionButton: View {
     let icon: String; var danger: Bool = false; let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 13)).foregroundColor(danger ? .red : .secondary)
-                .frame(width: 30, height: 30).background(Color(NSColor.controlBackgroundColor)).cornerRadius(7)
+            Image(systemName: icon).font(VGFont.bodyEmphasis).foregroundColor(danger ? VGColor.danger : VGColor.secondary)
+                .frame(width: 28, height: 28)
+                .background(VGColor.surface.opacity(0.6)).clipShape(Circle())
         }.buttonStyle(.plain).handCursor()
     }
 }
@@ -629,17 +636,17 @@ struct RepromptSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Image(systemName: "lock.shield").font(.system(size: 22)).foregroundColor(.accentColor)
+                Image(systemName: "lock.shield").font(VGFont.iconLarge).foregroundColor(VGColor.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.Reprompt.title.localized).font(.system(size: 15, weight: .bold))
-                    Text(request.cipherName).font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                    Text(L10n.Reprompt.title.localized).font(VGFont.title3Bold)
+                    Text(request.cipherName).font(VGFont.label).foregroundColor(VGColor.secondary).lineLimit(1)
                 }
             }
-            Text(L10n.Reprompt.subtitle.localized).font(.system(size: 12)).foregroundColor(.secondary)
+            Text(L10n.Reprompt.subtitle.localized).font(VGFont.label).foregroundColor(VGColor.secondary)
             SecureField(L10n.Reprompt.placeholder.localized, text: $password)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(verify)
-            if error { Text(L10n.Reprompt.wrong.localized).font(.system(size: 11)).foregroundColor(.red) }
+            if error { Text(L10n.Reprompt.wrong.localized).font(VGFont.caption).foregroundColor(VGColor.danger) }
             HStack {
                 Spacer()
                 Button(L10n.cancel.localized) { appState.cancelReprompt() }.keyboardShortcut(.escape).handCursor()
@@ -657,4 +664,3 @@ struct RepromptSheet: View {
         if !appState.submitReprompt(password) { error = true; password = "" }
     }
 }
-

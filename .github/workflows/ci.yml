@@ -3,14 +3,25 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
+  workflow_dispatch:
+
+# Least privilege: CI only reads the repo. (release.yml declares its own.)
+permissions:
+  contents: read
+
+# Cancel superseded runs of the same branch/PR to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
     name: Build & test (macOS)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -39,7 +50,7 @@ jobs:
     name: Repo hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: No committed user/signing state
         run: |
@@ -120,3 +131,104 @@ jobs:
               raise SystemExit(1)
           print('ok: no unexpected branch-based pins')
           EOF
+
+      - name: No committed .DS_Store
+        run: |
+          if git ls-files | grep -E '(^|/)\.DS_Store$'; then
+            echo "::error::.DS_Store committed"; exit 1
+          fi
+
+      - name: No review/demo placeholders or obvious secrets
+        run: |
+          # Scope: whole repo except this workflow (which names the tokens) and LICENSE.
+          if git grep -nE 'REPLACE_BEFORE_SUBMISSION|DEMO_SERVER|DEMO_EMAIL|DEMO_PASSWORD|BEGIN (RSA |OPENSSH )?PRIVATE KEY' \
+               -- ':!.github/workflows/*' ':!LICENSE'; then
+            echo "::error::Review placeholder or private-key material found"; exit 1
+          fi
+
+      - name: No stale positioning regressions (canonical public docs)
+        run: |
+          # These exact phrasings were removed during the multi-vault repositioning;
+          # they must not return to the public-facing docs.
+          if grep -rniE 'unofficial[, ]+third-party native macOS client|unofficial Bitwarden client|unofficial, third-party client' \
+               README.md PRIVACY.md SECURITY.md TRADEMARKS.md NOTICE docs/security-model.md docs/app-store-listing.md docs/app-store-review-notes.md 2>/dev/null; then
+            echo "::error::Stale 'unofficial client' positioning found in a public doc"; exit 1
+          fi
+
+      - name: No developer-hosted-service claims (review notes)
+        run: |
+          # The developer runs no server; review notes must not promise a demo/hosted server.
+          if grep -rniE 'use this demo server|developer-provided server|we (host|operate|provide) (a|the|our) server' \
+               docs/app-store-review-notes.md 2>/dev/null; then
+            echo "::error::Hosted/demo-server claim in review notes"; exit 1
+          fi
+
+      - name: No forbidden debug strings / TODO markers in source
+        run: |
+          # Logger (Log.app/Log.fault/Log.crypto) is the sanctioned logging path.
+          if grep -rnE '\bNSLog\(|\bdebugPrint\(|//[[:space:]]*(TODO|FIXME)\b' VaultGuard --include='*.swift'; then
+            echo "::error::Debug call or TODO/FIXME marker found in source"; exit 1
+          fi
+
+  release-readiness:
+    name: Release readiness
+    # Only on a version tag or manual run — not on every PR, so pending owner assets
+    # (screenshots/GIF) do not block routine CI.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: README asset links resolve
+        run: |
+          python3 - <<'EOF'
+          import re, pathlib, sys
+          readme = pathlib.Path('README.md').read_text()
+          refs = re.findall(r'(?:src="|\]\()(docs/assets/[^")\s]+)', readme)
+          missing = [r for r in dict.fromkeys(refs) if not pathlib.Path(r).exists()]
+          if missing:
+              for m in missing: print(f'::error::README references missing asset: {m}')
+              sys.exit(1)
+          print(f'ok: {len(set(refs))} README asset link(s) resolve')
+          EOF
+
+      - name: Version is consistent (project.yml / changelog / README)
+        run: |
+          python3 - <<'EOF'
+          import re, pathlib, sys
+          pj = pathlib.Path('project.yml').read_text()
+          mv = re.search(r'MARKETING_VERSION:\s*"?([0-9]+\.[0-9]+\.[0-9]+)"?', pj)
+          if not mv:
+              print('::error::MARKETING_VERSION not found in project.yml'); sys.exit(1)
+          version = mv.group(1)
+          ch = pathlib.Path('CHANGELOG.md').read_text()
+          if f'[{version}]' not in ch:
+              print(f'::error::CHANGELOG.md has no section for {version}'); sys.exit(1)
+          print(f'ok: version {version} present in project.yml and CHANGELOG.md')
+          EOF
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Unsigned archive smoke: catches archive-time breakage without certificates.
+      # Signed validation / notarization / upload is a credentialed step done with
+      # repository secrets or manually (see docs/release-smoke-checklist.md).
+      - name: Unsigned archive builds
+        run: >
+          xcodebuild archive
+          -scheme VaultGuard
+          -destination 'generic/platform=macOS'
+          -archivePath build/VaultGuard.xcarchive
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
+          -quiet
+
+      - name: Archive contains the app and the AutoFill extension
+        run: |
+          app="build/VaultGuard.xcarchive/Products/Applications/VaultGuard.app"
+          test -d "$app" || { echo "::error::archived app missing"; exit 1; }
+          ls "$app/Contents/PlugIns/"*.appex >/dev/null 2>&1 \
+            || { echo "::error::AutoFill .appex missing from archive"; exit 1; }
+          echo "ok: archive contains app + AutoFill extension"

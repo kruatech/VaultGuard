@@ -17,6 +17,8 @@ final class AccountManager: ObservableObject {
 
     init(keychain: KeychainService = .shared) {
         self.keychain = keychain
+        // Wipe any pre-split legacy items from the shared keychain group before reading state.
+        keychain.migrateAccessGroupsIfNeeded()
         load()
     }
 

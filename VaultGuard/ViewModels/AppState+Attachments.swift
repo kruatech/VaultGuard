@@ -6,6 +6,7 @@ extension AppState {
 
     /// Upload files from dropped URLs (files and folders, recursive)
     func uploadDroppedFiles(urls: [URL], toCipher cipher: VaultCipher) async {
+        if activeVaultKind == .keepass { await uploadKeePassFiles(urls: urls, toCipher: cipher); return }
         let allFiles = collectFiles(from: urls)
         guard !allFiles.isEmpty else { return }
 
@@ -68,6 +69,7 @@ extension AppState {
     // MARK: - Attachments
 
     func downloadAttachment(cipher: VaultCipher, attachment: CipherAttachment) async {
+        if activeVaultKind == .keepass { await downloadKeePassAttachment(cipher: cipher, attachment: attachment); return }
         guard let aid = attachment.id else { return }
         do {
             let (enc, _) = try await api.downloadAttachment(cipherId: cipher.id, attachmentId: aid)
@@ -79,6 +81,7 @@ extension AppState {
     }
 
     func deleteAttachment(cipher: VaultCipher, attachment: CipherAttachment) async {
+        if activeVaultKind == .keepass { await deleteKeePassAttachment(cipher: cipher, attachment: attachment); return }
         guard let aid = attachment.id else { return }
         do {
             try await api.deleteAttachment(cipherId: cipher.id, attachmentId: aid)
@@ -97,6 +100,10 @@ extension AppState {
     // decrypted-file-on-disk surface and the preview-vs-auto-lock race entirely.
 
     func loadAttachmentData(cipher: VaultCipher, attachment: CipherAttachment) async -> Data? {
+        if activeVaultKind == .keepass {
+            guard let id = attachment.id, let ref = Int(id) else { return nil }
+            return keePassBackend?.attachmentData(ref: ref)
+        }
         guard let aid = attachment.id else { return nil }
         do {
             let (enc, _) = try await api.downloadAttachment(cipherId: cipher.id, attachmentId: aid)
@@ -115,4 +122,53 @@ extension AppState {
     }
     static func isPDF(fileName: String?) -> Bool { fileName?.lowercased().hasSuffix(".pdf") ?? false }
     static func isZip(fileName: String?) -> Bool { fileName?.lowercased().hasSuffix(".zip") ?? false }
+    // MARK: - KeePass attachments (local .kdbx binary pool)
+
+    private func uploadKeePassFiles(urls: [URL], toCipher cipher: VaultCipher) async {
+        guard let backend = keePassBackend else { return }
+        let files = collectFiles(from: urls)
+        guard !files.isEmpty else { return }
+        isUploadingAttachments = true
+        attachmentUploadProgress = 0
+        let total = Double(files.count)
+        do {
+            for (index, fileURL) in files.enumerated() {
+                let data = try Data(contentsOf: fileURL)
+                _ = try backend.addAttachment(cipherId: cipher.id, fileName: fileURL.lastPathComponent, data: data)
+                attachmentUploadProgress = Double(index + 1) / total
+            }
+            try writeKeePassToDisk(backend)
+            publishKeePass(try await backend.load())
+            showToast(.info(L10n.DragDrop.uploadComplete.localized))
+        } catch {
+            showToast(.error(error.localizedDescription))
+        }
+        isUploadingAttachments = false
+        attachmentUploadProgress = 0
+    }
+
+    private func deleteKeePassAttachment(cipher: VaultCipher, attachment: CipherAttachment) async {
+        guard let backend = keePassBackend, let id = attachment.id, let ref = Int(id) else { return }
+        do {
+            try backend.removeAttachment(cipherId: cipher.id, ref: ref)
+            try writeKeePassToDisk(backend)
+            publishKeePass(try await backend.load())
+            showToast(.deleted())
+        } catch {
+            showToast(.error(error.localizedDescription))
+        }
+    }
+
+    private func downloadKeePassAttachment(cipher: VaultCipher, attachment: CipherAttachment) async {
+        guard let backend = keePassBackend, let id = attachment.id, let ref = Int(id),
+              let data = backend.attachmentData(ref: ref) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = attachment.fileName ?? "file"
+        panel.canCreateDirectories = true
+        let r = await panel.beginSheetModal(for: NSApp.keyWindow ?? NSApp.mainWindow ?? NSWindow())
+        if r == .OK, let url = panel.url {
+            do { try data.write(to: url); showToast(.info(L10n.fileSaved.localized)) }
+            catch { showToast(.error(error.localizedDescription)) }
+        }
+    }
 }

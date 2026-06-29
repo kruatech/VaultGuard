@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Same runtime Team-ID prefix as the main app (read by SharedConfig). -->
+    <key>VGAppIdentifierPrefix</key>
+    <string>$(AppIdentifierPrefix)</string>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleDisplayName</key><string>VaultGuard AutoFill</string>
     <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
@@ -11,7 +14,7 @@
     <key>CFBundlePackageType</key><string>XPC!</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionAttributes</key>
@@ -19,6 +22,11 @@
             <key>ASCredentialProviderExtensionCapabilities</key>
             <dict>
                 <key>ProvidesPasswords</key>
+                <true/>
+                <!-- Required for the OS to route passkey registration/assertion requests
+                     to this extension (see CredentialProviderViewController+Passkey.swift).
+                     Verify on-device per docs/release-smoke-checklist.md. -->
+                <key>ProvidesPasskeys</key>
                 <true/>
             </dict>
         </dict>

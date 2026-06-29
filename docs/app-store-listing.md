@@ -1,8 +1,14 @@
 # VaultGuard — App Store Connect listing (v1.0.0)
 
-Copy each field into the matching App Store Connect input. Character counts are pre‑checked against Apple's limits. Text is grounded in the project README; nothing is invented.
+Copy each field into the matching App Store Connect input. Character counts are
+pre-checked against Apple's limits. Text is grounded in the project README; nothing
+is invented. macOS only (no iOS/iPadOS build).
 
-> Note on trademarks (Apple Guideline 5.2.1): "Bitwarden" is a third‑party trademark. Using it *referentially* to describe compatibility, together with a clear "unofficial / not affiliated" statement, is the approach taken below. There is still some review risk in the **Subtitle** and **Keywords** specifically. Two options are provided for the subtitle; keywords are kept trademark‑free by default.
+> Note on trademarks (Apple Guideline 5.2.1): "Bitwarden" / "Vaultwarden" are
+> third-party names. They are used **referentially** to describe server
+> compatibility, never as the product identity, and the description includes a clear
+> "independent / not affiliated" statement. Keywords are kept trademark-free by
+> default to reduce rejection risk.
 
 ---
 
@@ -11,31 +17,33 @@ Copy each field into the matching App Store Connect input. Character counts are 
 VaultGuard
 ```
 
-## Subtitle  (limit 30)
-Primary, lower-risk subtitle (23 chars):
+## Subtitle  (limit 30 — using 28)
 ```
-Unofficial vault client
-```
-
-Compatibility with Bitwarden-compatible servers is described in the full description with a clear unofficial/non-affiliation statement.
-
-## Keywords  (limit 100 — using 97, comma‑separated, no spaces after commas)
-Trademark‑free by default to reduce rejection risk:
-```
-password manager,vault,autofill,totp,2fa,self-hosted,passwords,login,touch id,encryption,security
-```
-Adding `vaultwarden` or `bitwarden` here is at your discretion — it can improve discoverability but raises 5.2.1 risk. If you add one, drop a lower‑value term to stay ≤100.
-
-## Promotional Text  (limit 170 — using 164; editable later without review)
-```
-A fast, native, unofficial Mac client for compatible password vault servers. Touch ID unlock, AutoFill, TOTP, and an encrypted offline cache. It collects nothing.
+Open-source password manager
 ```
 
-## Description  (limit 4000 — using ~1962)
+## Keywords  (limit 100 — using 95, comma-separated, no spaces after commas)
+Trademark-free by default:
 ```
-VaultGuard is an unofficial, third-party macOS client for Bitwarden and Vaultwarden servers. It is an independent app and is not affiliated with, endorsed by, or sponsored by Bitwarden Inc.
+password manager,keepass,kdbx,vault,autofill,totp,2fa,self-hosted,passwords,touch id,encryption
+```
+Adding `vaultwarden` or `bitwarden` can improve discoverability but raises 5.2.1
+risk; if you add one, drop a lower-value term to stay ≤100.
 
-Connect VaultGuard to the Bitwarden-compatible server you choose — the official Bitwarden cloud, the EU instance, or your own self-hosted Vaultwarden — and manage your vault from a fast, native Mac app.
+## Promotional Text  (limit 170 — using 162; editable later without review)
+```
+Open-source Mac password manager. Use a local KeePass/KDBX file, or your own self-hosted Bitwarden/Vaultwarden server. Touch ID, AutoFill, TOTP. Collects nothing.
+```
+
+## Description  (limit 4000)
+```
+VaultGuard is an open-source password manager for macOS. It supports local KeePass/KDBX databases and user-provided self-hosted Bitwarden/Vaultwarden-compatible servers. It is an independent app and is not affiliated with, endorsed by, or sponsored by Bitwarden Inc.
+
+VaultGuard is privacy-first and local-first: open a KeePass (.kdbx) file with no server at all, or connect to a Bitwarden/Vaultwarden-compatible server that you run or have access to. The developer operates no hosted service and never receives your vault content.
+
+VAULT TYPES
+- Local KeePass/KDBX database (optional key file), decrypted on your Mac — no server needed
+- Self-hosted Bitwarden/Vaultwarden-compatible server you provide
 
 WHAT YOU CAN DO
 - View and manage logins, cards, identities, and secure notes
@@ -43,39 +51,41 @@ WHAT YOU CAN DO
 - Generate strong passwords with reusable templates
 - Built-in TOTP (two-factor) code generation
 - Fill credentials in Safari and other apps with the AutoFill extension
+- Search, open item details, and copy username/password
 - Unlock quickly with Touch ID
-- Work offline with a fast, encrypted local cache
-- Switch between multiple accounts, fully isolated
+- Work offline with a fast, encrypted local cache (server mode)
+- Switch between multiple vaults and accounts, kept isolated
 - Available in English and Russian
 
 SECURITY BY DESIGN
-- Your master password is never written to disk. The vault key is derived at login (Argon2id or PBKDF2, matching your server) and kept only in memory for the session.
+- Your master password is never written to disk. The vault key is derived at unlock (Argon2id/PBKDF2 for a server, the KeePass KDF for a .kdbx file) and kept only in memory for the session.
 - Touch ID unlock stores only a wrapped key behind a biometric-bound Keychain item — never the master password.
+- Session secrets stay in an app-private Keychain group the AutoFill extension cannot read; AutoFill works from a separate minimal cache sealed under a short-lived key.
 - Self-signed certificates are never trusted silently: VaultGuard shows the SHA-256 fingerprint for you to confirm once per server, and flags any later change.
-- The offline cache is sealed with AES-GCM under a random per-account key, and the vault data inside stays end-to-end encrypted.
 
 PRIVACY
-VaultGuard collects nothing. No analytics, no telemetry, no crash reporting, no tracking, and no ads. It connects only to the server you configure.
+VaultGuard collects nothing. No analytics, no telemetry, no crash reporting, no tracking, and no ads. The developer runs no server and receives no vault content. In server mode it connects only to the server you configure; in local KDBX mode it makes no network connection for your vault.
 
 REQUIREMENTS
-A Bitwarden-compatible account on a server you control or have access to.
+None for local KDBX mode. Server mode requires your own Bitwarden/Vaultwarden-compatible server — the developer does not provide one.
 
 VaultGuard is open source under the Apache License 2.0.
 
 "Bitwarden" is a trademark of Bitwarden Inc.; "Vaultwarden" belongs to its respective authors. These names are used only to describe server compatibility. VaultGuard is provided "as is", without warranty of any kind.
 ```
 
-## What's New (release notes for 1.0.0)  (limit 4000 — using ~489)
+## What's New (release notes for 1.0.0)  (limit 4000)
 ```
-Initial release of VaultGuard.
+Initial public release of VaultGuard.
 
-- Connect to Bitwarden or Vaultwarden servers (cloud, EU, or self-hosted)
+- Local KeePass/KDBX vaults — open a .kdbx file with no server required
+- Self-hosted Bitwarden/Vaultwarden-compatible server vaults (bring your own server)
 - Logins, cards, identities, and secure notes with folders, favorites, and trash
 - Password generator with templates and built-in TOTP codes
-- AutoFill extension for Safari and other apps
+- AutoFill extension for Safari and other apps, with a configurable key TTL
 - Touch ID unlock without storing your master password
+- Encrypted offline cache and multi-vault / multi-account isolation
 - SHA-256 certificate pinning for self-signed servers
-- Encrypted offline cache and multi-account support
 - English and Russian localization
 ```
 
@@ -90,21 +100,23 @@ Initial release of VaultGuard.
 - **Support URL:** `https://github.com/kruatech/VaultGuard`
 - **Marketing URL (optional):** `https://github.com/kruatech/VaultGuard`
 - **Privacy Policy URL (required):** `https://github.com/kruatech/VaultGuard/blob/main/PRIVACY.md`
-  - A GitHub‑rendered Markdown page is accepted. If you prefer a cleaner page, host PRIVACY as plain HTML and use that URL instead.
+  - A GitHub-rendered Markdown page is accepted. If you prefer a cleaner page, host PRIVACY as plain HTML and use that URL instead.
 
 ## App Privacy (Data Collection) questionnaire
-- Answer: **Data Not Collected** for every category. (Matches PRIVACY.md — no analytics, telemetry, crash reporting, tracking, or ads; network traffic goes only to the user's configured server.)
+- Answer: **Data Not Collected** for every category. (Matches PRIVACY.md — no analytics, telemetry, crash reporting, tracking, or ads; the developer runs no server, and in server mode network traffic goes only to the user's own server.)
 
 ## Export Compliance (encryption)
-- `ITSAppUsesNonExemptEncryption` is already set to `false` in the app Info.plist.
-- In App Store Connect this corresponds to: app uses encryption, but only standard/exempt encryption (TLS, and Apple/standard algorithms for authentication and protecting the user's own data). No custom or proprietary cryptography is added.
-- Depending on your jurisdiction an annual self‑classification report may still apply. This is not legal advice — confirm for your situation.
+- `ITSAppUsesNonExemptEncryption` is set to `false` in the app Info.plist.
+- In App Store Connect this corresponds to: app uses encryption, but only standard/exempt encryption (TLS, and standard algorithms — AES-GCM, HKDF, Argon2/PBKDF2 — for authentication and protecting the user's own data). No custom or proprietary cryptography is added.
+- Depending on your jurisdiction an annual self-classification report may still apply. This is not legal advice — confirm for your situation.
 
 ## Assets you still need to produce (not text)
 - **App icon:** included as a complete macOS AppIcon set in `Assets.xcassets`; verify it visually in Xcode before submission.
-- **Screenshots:** at least one for the required macOS display size(s). Avoid showing real credentials; use a demo vault.
+- **Screenshots:** at least one per required macOS display size. Show both vault types (local KDBX and self-hosted server). Use only fake/demo data — no real credentials, emails, URLs, or filesystem paths.
+- **Sample review database:** a small KeePass `.kdbx` with only fake test data, for the local review path in `docs/app-store-review-notes.md`. Provide its master password in App Store Connect, not in the repo.
 
-## Pre‑submission sanity checks
-- Both targets share the Team ID (via optional `Config/Signing.local.xcconfig`) and bundle IDs `com.kruatech.vaultguard` + `com.kruatech.vaultguard.autofill`.
-- After building, confirm the `.app` and the embedded `.appex` both report version **1.0.0 (1)** — they now derive from `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml`.
-- App Store distribution signing/provisioning selected (notarization is only needed if you also ship a DMG outside the App Store).
+## Pre-submission sanity checks
+- Both targets share the Team ID (via `Config/Signing.local.xcconfig`) and bundle IDs `com.kruatech.vaultguard` + `com.kruatech.vaultguard.autofill`.
+- After building, confirm the `.app` and the embedded `.appex` both report version **1.0.0 (current build)** — they derive from `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml`.
+- App Store distribution signing/provisioning selected; the app entitlements include both keychain access groups (`…vaultguard` and `…vaultguard.private`) and the extension only the shared one.
+- Passkeys are not advertised in this listing; confirm the passkey assertion path on-device (see `docs/release-smoke-checklist.md`) before listing it as a feature.

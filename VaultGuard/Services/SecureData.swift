@@ -1,14 +1,24 @@
 import Foundation
 
-/// A wrapper around mutable bytes that guarantees zeroing on deallocation.
-/// Use instead of `Data` for any secrets (master key, enc key, password hash).
+/// A wrapper around mutable bytes whose OWN buffer is guaranteed to be zeroed on
+/// deallocation (`memset_s`). Use instead of `Data` for secrets (master key, enc key,
+/// password hash).
+///
+/// HONEST LIMITATION (Swift memory model): the `data` / `prefix` / `suffix` accessors and
+/// `SecureString.string` return ordinary `Data`/`String` COPIES that this class cannot
+/// track or zero — once a copy is taken, its lifetime is up to the caller and ARC/COW.
+/// The guarantee here is therefore best-effort containment of the primary buffer, not a
+/// proof that no secret bytes remain in memory. Prefer `withUnsafeBytes` for transient
+/// access, take copies only to hand them straight to protected storage, and see
+/// docs/security-model.md ("Memory handling").
 final class SecureBytes {
     private var buffer: UnsafeMutableBufferPointer<UInt8>
     
     var count: Int { buffer.count }
     var isEmpty: Bool { buffer.count == 0 }
     
-    /// Access raw bytes (read-only copy as Data)
+    /// Read-only COPY of the bytes as `Data`. The copy is not tracked and will not be
+    /// zeroed by this class — hand it straight to protected storage and drop it.
     var data: Data {
         Data(buffer)
     }
@@ -62,7 +72,9 @@ final class SecureBytes {
     }
 }
 
-/// Secure string wrapper that zeroes underlying UTF-8 bytes on deallocation
+/// String wrapper whose backing UTF-8 bytes are zeroed on deallocation. Note that the
+/// `string` accessor returns an ordinary `String` COPY that cannot be zeroed (see the
+/// limitation note on `SecureBytes`).
 final class SecureString {
     private let backing: SecureBytes
     

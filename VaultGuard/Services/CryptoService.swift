@@ -276,10 +276,16 @@ final class CryptoService: @unchecked Sendable {
     }
 
     /// Strict symmetric decrypt. MAC is mandatory for authenticated AES-CBC types;
-    /// unauthenticated AES-CBC (type 0) is rejected outright.
+    /// unauthenticated AES-CBC (type 0) is rejected outright. Type 1
+    /// (AES-128-CBC + HMAC) is also rejected: `SymmetricCryptoKey` derives only
+    /// 32-byte AES-256 sub-keys, so a type-1 payload could never verify/decrypt
+    /// correctly here — reject it explicitly instead of failing with a confusing
+    /// MAC error. (Bitwarden servers have not issued type 1 for years; add real
+    /// 16-byte key support before accepting it.)
     private func decryptEncString(_ enc: EncString, key: SymmetricCryptoKey) throws -> Data {
         switch enc.type {
-        case .aesCbc256_HmacSha256_B64, .aesCbc128_HmacSha256_B64:
+        case .aesCbc256_HmacSha256_B64:
+            guard key.hasMacKey else { throw CryptoError.invalidKeyLength }
             guard let iv = enc.iv, let mac = enc.mac else { throw CryptoError.invalidEncString }
             var macInput = Data(); macInput.append(iv); macInput.append(enc.ct)
             let computed = hmacSha256(data: macInput, key: key)
@@ -288,6 +294,9 @@ final class CryptoService: @unchecked Sendable {
 
         case .aesCbc256_B64:
             throw CryptoError.unauthenticatedNotAllowed
+
+        case .aesCbc128_HmacSha256_B64:
+            throw CryptoError.unsupportedEncType(enc.type.rawValue)
 
         default:
             // RSA types must go through decryptRSA, never the symmetric path.
@@ -408,7 +417,8 @@ final class CryptoService: @unchecked Sendable {
         guard let type = EncType(rawValue: typeByte) else { throw CryptoError.unsupportedEncType(typeByte) }
 
         switch type {
-        case .aesCbc256_HmacSha256_B64, .aesCbc128_HmacSha256_B64:
+        case .aesCbc256_HmacSha256_B64:
+            guard key.hasMacKey else { throw CryptoError.invalidKeyLength }
             let iv = Data(data[(start + 1)..<(start + 17)])
             let mac = Data(data[(start + 17)..<(start + 49)])
             let ct = Data(data[(start + 49)...])
@@ -419,6 +429,10 @@ final class CryptoService: @unchecked Sendable {
 
         case .aesCbc256_B64:
             throw CryptoError.unauthenticatedNotAllowed
+
+        case .aesCbc128_HmacSha256_B64:
+            // See decryptEncString: AES-128 key layout is not implemented; reject explicitly.
+            throw CryptoError.unsupportedEncType(typeByte)
 
         default:
             throw CryptoError.unsupportedEncType(typeByte)
@@ -443,6 +457,40 @@ final class CryptoService: @unchecked Sendable {
         var macData = Data(); macData.append(iv); macData.append(ct)
         let mac = hmacSha256(data: macData, key: key)
         return EncString(type: .aesCbc256_HmacSha256_B64, iv: iv, ct: ct, mac: mac).serialize()
+    }
+
+    // MARK: - Send
+
+    /// Create fresh Send key material: the Send crypto key (HKDF-SHA256, salt "bitwarden-send",
+    /// info "send", 64 bytes -> enc + mac); the send key wrapped under the user key (the Send
+    /// `key` field); and the base64url access fragment for the share URL.
+    func makeSendKeyMaterial() throws -> (cryptoKey: SymmetricCryptoKey, encryptedKey: String, fragment: String) {
+        guard let userKeyData = exportUserKey() else { throw CryptoError.noMasterKey }
+        let sendKey = try randomBytes(16)
+        let stretched = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: sendKey),
+            salt: Data("bitwarden-send".utf8), info: Data("send".utf8), outputByteCount: 64)
+        let cryptoKey = SymmetricCryptoKey(key: stretched.withUnsafeBytes { Data($0) })
+        let encryptedKey = try encryptData(sendKey, key: SymmetricCryptoKey(key: userKeyData))
+        let fragment = sendKey.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return (cryptoKey, encryptedKey, fragment)
+    }
+
+    /// Encrypt a Send field (name / text) under the Send crypto key.
+    func encryptSendString(_ plaintext: String, key: SymmetricCryptoKey) throws -> String {
+        try encryptData(Data(plaintext.utf8), key: key)
+    }
+
+    /// Rebuild a Send crypto key from a raw 16-byte send key (to decrypt name/text of fetched
+    /// Sends). Same HKDF as `makeSendKeyMaterial`.
+    func sendCryptoKey(fromSendKey sendKey: Data) -> SymmetricCryptoKey {
+        let stretched = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: sendKey),
+            salt: Data("bitwarden-send".utf8), info: Data("send".utf8), outputByteCount: 64)
+        return SymmetricCryptoKey(key: stretched.withUnsafeBytes { Data($0) })
     }
 
     // MARK: - Attachment Encryption
@@ -711,7 +759,7 @@ struct PasswordTemplate: Identifiable, Codable, Equatable {
 // MARK: - Errors
 
 enum CryptoError: LocalizedError {
-    case noMasterKey, invalidEncString, macMismatch, missingIV
+    case noMasterKey, invalidEncString, macMismatch, invalidKeyLength
     case decryptionFailed(CCCryptorStatus), encryptionFailed(CCCryptorStatus)
     case randomFailed, unsupportedKdf(Int), missingKdfParams
     case rsaDecryptionFailed(String)
@@ -723,7 +771,7 @@ enum CryptoError: LocalizedError {
         case .noMasterKey: return "Master key not set"
         case .invalidEncString: return "Invalid encrypted string format"
         case .macMismatch: return "Data integrity check failed (MAC)"
-        case .missingIV: return "Missing initialization vector"
+        case .invalidKeyLength: return "Invalid key length for authenticated decryption"
         case .decryptionFailed(let s): return "Decryption error: \(s)"
         case .encryptionFailed(let s): return "Encryption error: \(s)"
         case .randomFailed: return "Random data generation error"

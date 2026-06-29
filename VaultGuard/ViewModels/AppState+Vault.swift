@@ -4,6 +4,7 @@ extension AppState {
     // MARK: - Folder CRUD
 
     func createFolder(name: String) async {
+        if activeVaultKind == .keepass { await createKeePassFolder(name: name); return }
         guard let encrypted = crypto.encrypt(name) else { showToast(.error(L10n.encryptionError.localized)); return }
         do {
             let result = try await api.createFolder(name: encrypted)
@@ -16,6 +17,7 @@ extension AppState {
     }
 
     func renameFolder(id: String, newName: String) async {
+        if activeVaultKind == .keepass { await renameKeePassFolder(id: id, newName: newName); return }
         guard let encrypted = crypto.encrypt(newName) else { showToast(.error(L10n.encryptionError.localized)); return }
         do {
             _ = try await api.updateFolder(id: id, name: encrypted)
@@ -25,6 +27,7 @@ extension AppState {
     }
 
     func deleteFolder(id: String) async {
+        if activeVaultKind == .keepass { await deleteKeePassFolder(id: id); return }
         do {
             try await api.deleteFolder(id: id)
             folders.removeAll { $0.id == id }
@@ -38,6 +41,7 @@ extension AppState {
     // MARK: - Cipher CRUD
 
     func saveCipher(_ cipher: VaultCipher, isNew: Bool) async {
+        if activeVaultKind == .keepass { await saveKeePassCipher(cipher, isNew: isNew); return }
         do {
             let req = encryptCipherRequest(cipher)
             let noName = "misc.noName".localized, noOrgKey = "misc.noOrgKey".localized, undecryptable = "misc.undecryptable".localized
@@ -53,6 +57,7 @@ extension AppState {
     }
 
     func deleteCipher(_ cipher: VaultCipher) async {
+        if activeVaultKind == .keepass { await deleteKeePassCipher(cipher); return }
         do {
             try await api.deleteCipher(id: cipher.id)
             ciphers.removeAll { $0.id == cipher.id }
@@ -72,6 +77,7 @@ extension AppState {
     }
 
     func toggleFavorite(_ cipher: VaultCipher) async {
+        if activeVaultKind == .keepass { showToast(.info(L10n.keePassReadOnly.localized)); return }
         guard let i = ciphers.firstIndex(where: { $0.id == cipher.id }) else { return }
         ciphers[i].favorite.toggle()
         do { _ = try await api.updateCipher(id: cipher.id, encryptCipherRequest(ciphers[i])) }
@@ -79,6 +85,7 @@ extension AppState {
     }
 
     func moveCipherToFolder(_ cipherId: String, folderId: String?) async {
+        if activeVaultKind == .keepass { await moveKeePassCipher(cipherId: cipherId, folderId: folderId); return }
         guard let i = ciphers.firstIndex(where: { $0.id == cipherId }) else { return }
         let old = ciphers[i].folderId; ciphers[i].folderId = folderId
         do {
@@ -90,7 +97,7 @@ extension AppState {
 
     // MARK: - Encrypt
 
-    private func encryptCipherRequest(_ c: VaultCipher) -> CipherRequest {
+    func encryptCipherRequest(_ c: VaultCipher) -> CipherRequest {
         let org = c.organizationId
         var lr: LoginRequest?
         if let l = c.login {

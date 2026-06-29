@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  # SwiftPM: ecosystem "swift" требует Package.swift в каталоге.
+  # Здесь SPM идёт через Xcode-проект (только Package.resolved), поэтому
+  # апдейтер ниже оставлен закомментированным до появления Package.swift.
+  # - package-ecosystem: "swift"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"

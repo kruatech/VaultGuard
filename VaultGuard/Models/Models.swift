@@ -19,9 +19,97 @@ enum CipherType: Int, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - KeePass entry icon
+
+/// A KeePass entry's icon: either a built-in index (0...68) or a custom PNG/JPEG
+/// embedded in the database's <Meta><CustomIcons>. nil for Bitwarden ciphers.
+enum KeePassIconRef: Equatable {
+    case standard(Int)
+    case custom(Data)
+}
+
+extension KeePassIconRef: Codable {
+    private enum CodingKeys: String, CodingKey { case kind, index, data }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .standard(let i): try c.encode("standard", forKey: .kind); try c.encode(i, forKey: .index)
+        case .custom(let d):   try c.encode("custom", forKey: .kind);   try c.encode(d, forKey: .data)
+        }
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if (try? c.decode(String.self, forKey: .kind)) == "custom" {
+            self = .custom(try c.decode(Data.self, forKey: .data))
+        } else {
+            self = .standard((try? c.decode(Int.self, forKey: .index)) ?? 0)
+        }
+    }
+}
+
+extension KeePassIconRef {
+    /// Best-effort mapping of KeePass standard icons (0...68) to SF Symbols.
+    /// Approximate; unmapped indices fall back to a key glyph (the KeePass default).
+    static func sfSymbol(forStandard idx: Int) -> String {
+        switch idx {
+        case 1, 8:  return "globe"
+        case 2:     return "exclamationmark.triangle.fill"
+        case 3:     return "server.rack"
+        case 4, 48, 49, 50: return "folder.fill"
+        case 5:     return "bubble.left.fill"
+        case 6:     return "puzzlepiece.fill"
+        case 7, 44: return "note.text"
+        case 9:     return "person.text.rectangle.fill"
+        case 10, 22, 28: return "doc.fill"
+        case 11:    return "camera.fill"
+        case 12:    return "dot.radiowaves.left.and.right"
+        case 14:    return "bolt.fill"
+        case 15:    return "doc.text.magnifyingglass"
+        case 16:    return "star.circle.fill"
+        case 17:    return "opticaldisc"
+        case 18, 23, 35: return "desktopcomputer"
+        case 19:    return "envelope.fill"
+        case 20, 34: return "gearshape.fill"
+        case 21:    return "doc.on.clipboard.fill"
+        case 24:    return "bolt.slash.fill"
+        case 25:    return "envelope.badge.fill"
+        case 26, 27, 38: return "externaldrive.fill"
+        case 29, 30: return "terminal.fill"
+        case 31:    return "printer.fill"
+        case 32:    return "app.fill"
+        case 33:    return "play.fill"
+        case 36:    return "archivebox.fill"
+        case 37, 66: return "banknote.fill"
+        case 39:    return "clock.fill"
+        case 40:    return "envelope.open.fill"
+        case 41:    return "flag.fill"
+        case 42:    return "memorychip.fill"
+        case 43:    return "trash.fill"
+        case 45:    return "hourglass"
+        case 46:    return "info.circle.fill"
+        case 47:    return "shippingbox.fill"
+        case 51:    return "lock.open.fill"
+        case 52:    return "doc.fill"
+        case 53:    return "checkmark.circle.fill"
+        case 54:    return "pencil"
+        case 55:    return "photo.fill"
+        case 56, 65: return "book.fill"
+        case 57:    return "list.bullet"
+        case 59:    return "wrench.and.screwdriver.fill"
+        case 60:    return "house.fill"
+        case 61:    return "star.fill"
+        case 63:    return "leaf.fill"
+        case 64:    return "apple.logo"
+        case 67:    return "checkmark.seal.fill"
+        case 68:    return "iphone"
+        default:    return "key.fill"
+        }
+    }
+}
+
 enum FieldType: Int, Codable { case text = 0; case hidden = 1; case boolean = 2 }
 
-struct VaultFolder: Identifiable, Codable { let id: String; var name: String; var revisionDate: Date? }
+struct VaultFolder: Identifiable, Codable { let id: String; var name: String; var revisionDate: Date?; var parentId: String? = nil }
 struct VaultCollection: Identifiable { let id: String; var name: String; var organizationId: String? }
 struct VaultOrganization: Identifiable { let id: String; let name: String }
 
@@ -76,6 +164,7 @@ struct VaultCipher: Identifiable, Codable {
     var fields: [CipherField]?; var attachments: [CipherAttachment]?
     var favorite: Bool; var reprompt: Int?
     var creationDate: Date?; var revisionDate: Date?; var deletedDate: Date?
+    var keepassIcon: KeePassIconRef? = nil
 
     var displayUsername: String {
         switch type {

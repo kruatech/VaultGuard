@@ -6,6 +6,20 @@ You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-VaultGuard is an unofficial, third-party client and is not affiliated with,
-endorsed by, or sponsored by Bitwarden Inc. "Bitwarden" is a trademark of
-Bitwarden Inc.
+VaultGuard is a standalone, open-source password manager. It is an independent
+project and is not affiliated with, endorsed by, or sponsored by Bitwarden Inc.
+"Bitwarden" is a trademark of Bitwarden Inc.; "Vaultwarden" belongs to its
+respective authors; "KeePass" and the KDBX format belong to their respective
+authors. These names are used only to describe compatibility. See TRADEMARKS.md.
+
+Third-party components (full license texts in THIRD_PARTY_LICENSES):
+
+- Argon2Swift — MIT License. Copyright 2020 Tejas Mehta.
+  https://github.com/tmthecoder/Argon2Swift
+- Argon2 reference C implementation (phc-winner-argon2), wrapped by Argon2Swift and
+  pulled in transitively — dual-licensed under CC0 1.0 Universal or the Apache
+  License, Version 2.0, at your option. Copyright 2015 Daniel Dinu,
+  Dmitry Khovratovich, Jean-Philippe Aumasson, and Samuel Neves.
+
+Any sample data bundled for review or documentation (for example, a sample
+KeePass database) contains only fictitious test data and no real credentials.

@@ -10,7 +10,7 @@ Thanks for your interest in improving VaultGuard — an **unofficial, third-part
 
 ## Development setup
 
-Requirements: macOS 13+, Xcode 15+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). A **paid** Apple Developer account is needed to build the AutoFill extension (App Group + AutoFill Credential Provider capability).
+Requirements: macOS 14+, Xcode 15+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). A **paid** Apple Developer account is needed to build the AutoFill extension (App Group + AutoFill Credential Provider capability).
 
 ```bash
 # 1. Provide your own signing config (git-ignored):

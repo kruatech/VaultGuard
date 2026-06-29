@@ -1,0 +1,163 @@
+name: Release (signed App Store build)
+
+# Signed App Store archive + export, with optional upload to App Store Connect.
+# App Store builds are notarized by Apple during review, so no notarytool step is
+# needed here (notarytool is only for Developer-ID distribution outside the store).
+#
+# Required repository secrets:
+#   BUILD_CERTIFICATE_BASE64  base64 of an "Apple Distribution" certificate (.p12)
+#   P12_PASSWORD              password for that .p12
+#   KEYCHAIN_PASSWORD         any string; password for the temporary CI keychain
+#   ASC_API_KEY_ID            App Store Connect API Key ID
+#   ASC_API_ISSUER_ID         App Store Connect API Issuer ID
+#   ASC_API_KEY_BASE64        base64 of the App Store Connect API private key (.p8)
+#   DEVELOPMENT_TEAM          10-character Apple Team ID (kept out of the repo)
+#
+# CALIBRATION NOTE: a few flags here are Xcode-version sensitive and should be
+# confirmed on a first run in Actions:
+#   - ExportOptions "method": "app-store-connect" (Xcode 15.3+/16). Older Xcode
+#     uses "app-store".
+#   - `xcrun altool` (validate/upload) is deprecated; if the runner's Xcode has
+#     dropped it, switch the validate/upload steps to Transporter (iTMSTransporter).
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload to App Store Connect after a successful export'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never run two release builds concurrently for the same ref; do not cancel an
+# in-flight release (a half-cancelled upload is worse than a queued one).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Archive, export, validate (optional upload)
+    runs-on: macos-15
+    env:
+      SCHEME: VaultGuard
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Import signing certificate into a temporary keychain
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cert="$RUNNER_TEMP/cert.p12"
+          kc="$RUNNER_TEMP/build.keychain-db"
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$kc"
+          security import "$cert" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          security list-keychain -d user -s "$kc" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$kc" >/dev/null
+          rm -f "$cert"
+
+      - name: Install App Store Connect API key
+        env:
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$dir"
+          echo "$ASC_API_KEY_BASE64" | base64 --decode > "$dir/AuthKey_${ASC_API_KEY_ID}.p8"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Write ExportOptions.plist
+        run: |
+          set -euo pipefail
+          plist="$RUNNER_TEMP/ExportOptions.plist"
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict/></plist>' > "$plist"
+          pb=/usr/libexec/PlistBuddy
+          "$pb" -c "Add :method string app-store-connect" "$plist"
+          "$pb" -c "Add :destination string export" "$plist"
+          "$pb" -c "Add :teamID string ${DEVELOPMENT_TEAM}" "$plist"
+          "$pb" -c "Add :signingStyle string automatic" "$plist"
+          "$pb" -c "Print" "$plist"
+
+      - name: Archive (signed)
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -scheme "$SCHEME" \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/VaultGuard.xcarchive" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
+            -quiet
+
+      - name: Export for App Store
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/VaultGuard.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID"
+
+      - name: Locate exported package
+        id: pkg
+        run: |
+          set -euo pipefail
+          pkg="$(ls "$RUNNER_TEMP/export/"*.pkg | head -1)"
+          test -f "$pkg" || { echo "::error::no exported .pkg found"; exit 1; }
+          echo "path=$pkg" >> "$GITHUB_OUTPUT"
+          echo "exported: $pkg"
+
+      - name: Validate with App Store Connect
+        env:
+          # Passed via env, not inline ${{ }} interpolation, so the shell never
+          # re-parses the value (github-actions/security-guides: script injection).
+          PKG_PATH: ${{ steps.pkg.outputs.path }}
+        run: |
+          set -euo pipefail
+          xcrun altool --validate-app -t macos \
+            -f "$PKG_PATH" \
+            --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
+
+      - name: Upload to App Store Connect
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload }}
+        env:
+          PKG_PATH: ${{ steps.pkg.outputs.path }}
+        run: |
+          set -euo pipefail
+          xcrun altool --upload-app -t macos \
+            -f "$PKG_PATH" \
+            --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
+
+      - name: Upload export as build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: VaultGuard-appstore-export
+          path: ${{ runner.temp }}/export
+          if-no-files-found: error

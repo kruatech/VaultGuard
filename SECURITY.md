@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-VaultGuard is actively developed. Security fixes are applied to the latest released version (currently 1.0.0) and the `main` branch. Older versions are not maintained.
+VaultGuard is actively developed and currently pre-release (no published builds yet — see the README build instructions). Security fixes land on the `main` branch; once versioned releases exist, only the latest release and `main` will be maintained.
 
 ## Reporting a vulnerability
 
@@ -25,9 +25,11 @@ Reports are handled on a best-effort basis by a small project. You can expect an
 ## Security model summary
 
 - The master password is never persisted. Biometric unlock stores biometric-protected vault key material, not the raw master password.
+- Keychain items are split into two access groups: an app-private group (tokens, wrapped user key, KDF params, offline-cache key, account index, KeePass bookmarks) that the AutoFill extension is not entitled to, and a shared group holding only minimal AutoFill state.
 - Self-signed TLS certificates require explicit SHA-256 fingerprint confirmation and are pinned per host.
 - Decrypted attachment previews are written only to an isolated temporary directory, older previews are removed before a new preview, and previews are cleaned up when the app locks.
-- AutoFill can serve credentials only while the main app has published the temporary shared vault key for the currently unlocked account.
+- AutoFill serves credentials from a separate, minimal cache sealed under a key derived from a short-lived shared secret; lock / logout / account removal / local vault close / TTL expiry all revoke access. The extension never receives the real vault key or any token.
+- Passkey private keys are stored behind a user-presence access control and are deleted on logout / account removal / local vault removal.
 
 ## Scope
 

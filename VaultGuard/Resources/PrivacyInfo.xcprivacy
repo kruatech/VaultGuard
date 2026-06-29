@@ -7,18 +7,16 @@
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
-	<!-- VaultGuard does not collect any data from this app. Vault data is end-to-end
-	     encrypted and only ever sent to the user-configured Bitwarden/Vaultwarden server;
-	     the developer receives nothing. Keep this in sync with App Store Connect App Privacy
-	     (which should be set to "Data Not Collected"). -->
+	<!-- VaultGuard collects no data. In local KDBX mode the vault never leaves the device;
+	     in server mode vault data is end-to-end encrypted and sent only to the user-provided
+	     server. The developer operates no hosted service and receives nothing. This matches
+	     App Store Connect App Privacy: "Data Not Collected". -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array/>
-	<!-- Required-reason APIs actually used by the app.
-	     Verified against the source: only UserDefaults (incl. @AppStorage) is used.
-	     No file-timestamp, disk-space, system-boot-time, or active-keyboard APIs are present.
-	     CA92.1 = access info from user defaults that is only accessible to the app itself.
-	     ACTION BEFORE SUBMISSION: run Xcode Product > Archive > Validate and reconcile this
-	     list with the validation/privacy report; adjust reason codes if Apple flags anything. -->
+	<!-- Required-reason APIs used by the app. Verified against the source: only UserDefaults
+	     (incl. @AppStorage and the App Group suite) is used; no file-timestamp, disk-space,
+	     system-boot-time, or active-keyboard APIs are present.
+	     CA92.1 = access user defaults accessible only to the app/extension group. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>

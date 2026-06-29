@@ -1,0 +1,5 @@
+# Code owners for VaultGuard.
+# These owners are requested for review on any pull request.
+# Replace @kruatech with the correct GitHub username/team if different.
+
+*       @kruatech

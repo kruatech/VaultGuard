@@ -311,6 +311,61 @@ actor APIService {
         return try await putJSON("\(apiBaseURL)/folders/\(id)", body: body)
     }
 
+    // MARK: - Sends
+
+    func createSend(_ body: SendRequest) async throws -> SendResponse {
+        return try await postJSON("\(apiBaseURL)/sends", body: body)
+    }
+
+    func getSends() async throws -> [SendResponse] {
+        let list: SendListResponse = try await get("\(apiBaseURL)/sends")
+        return list.data
+    }
+
+    func deleteSend(id: String) async throws {
+        try await delete("\(apiBaseURL)/sends/\(id)")
+    }
+
+    /// Update an existing Send (edit fields, enable/disable). Type cannot change.
+    func updateSend(id: String, _ body: SendRequest) async throws -> SendResponse {
+        return try await putJSON("\(apiBaseURL)/sends/\(id)", body: body)
+    }
+
+    /// Step 1 of a file Send: create the Send + get upload target.
+    func createFileSend(_ body: SendFileCreateRequest) async throws -> SendFileUploadResponse {
+        return try await postJSON("\(apiBaseURL)/sends/file/v2", body: body)
+    }
+
+    /// Step 2 of a file Send: upload the encrypted bytes as the sole `data` part. The part's
+    /// filename MUST be the full encrypted file name — Vaultwarden rejects a mismatch.
+    func uploadSendFile(sendId: String, fileId: String, encryptedFileName: String, encryptedData: Data) async throws {
+        guard let requestURL = URL(string: "\(apiBaseURL)/sends/\(sendId)/file/\(fileId)") else { throw APIError.invalidURL }
+        try await ensureValidToken()
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "POST"
+        let boundary = "----VaultGuard\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token = accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"data\"; filename=\"\(encryptedFileName)\"\r\n".utf8))
+        body.append(Data("Content-Type: application/octet-stream\r\n\r\n".utf8))
+        body.append(encryptedData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        request.httpBody = body
+        let (data, response) = try await session.data(for: request)
+        try validateResponse(response, data: data)
+    }
+
+    /// Web-vault root for building Send share links. Self-hosted: server root (apiBaseURL minus
+    /// "/api"). Public cloud: the vault domain.
+    func sendShareBaseURL() -> String {
+        if apiBaseURL.hasSuffix("/api") { return String(apiBaseURL.dropLast(4)) }
+        if apiBaseURL == "https://api.bitwarden.com" { return "https://vault.bitwarden.com" }
+        if apiBaseURL == "https://api.bitwarden.eu" { return "https://vault.bitwarden.eu" }
+        return apiBaseURL
+    }
+
     // MARK: - Private Helpers
 
     private func ensureValidToken() async throws {

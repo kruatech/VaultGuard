@@ -41,8 +41,10 @@ body:
   - type: dropdown
     id: server
     attributes:
-      label: Server type
+      label: Vault type
+      description: Local KeePass file, or which server the account is connected to.
       options:
+        - Local KeePass file (.kdbx) — no server
         - Self-hosted Vaultwarden
         - Bitwarden cloud (.com)
         - Bitwarden EU (.eu)

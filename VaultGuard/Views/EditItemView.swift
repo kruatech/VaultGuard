@@ -23,6 +23,12 @@ struct EditItemView: View {
     @State private var notes = ""
     @State private var favorite = false
     @State private var customFields: [CipherField] = []
+    @FocusState private var focusedCustomField: CustomFieldFocus?
+
+    /// Identifies which custom-field input has focus (a row's id + which column).
+    private enum CustomFieldFocus: Hashable { case name(UUID), value(UUID) }
+    @State private var keepassIcon: KeePassIconRef? = nil
+    @State private var iconExpanded = false
     // Card
     @State private var cardholderName = ""
     @State private var cardNumber = ""
@@ -58,79 +64,79 @@ struct EditItemView: View {
 
     private var isNew: Bool { cipher == nil }
 
+    /// Single source of truth for dirtiness: any change to any editable field changes
+    /// this string, so one `.onChange` covers every field (no per-field bookkeeping to
+    /// forget). UI-only state (e.g. password visibility) is intentionally excluded.
+    private var dirtySnapshot: String {
+        let base = [name, "\(type)", folderId ?? "", "\(favorite)", notes].joined(separator: "\u{1}")
+        let login = [username, password, "\(totpEnabled)", totpSecret, url].joined(separator: "\u{1}")
+        let card = [cardholderName, cardNumber, cardExpMonth, cardExpYear, cardCode, cardBrand].joined(separator: "\u{1}")
+        let ident = [idTitle, idFirstName, idMiddleName, idLastName, idUsername, idCompany, idEmail, idPhone,
+                     idSsn, idPassport, idLicense, idAddress1, idAddress2, idAddress3, idCity, idState,
+                     idPostalCode, idCountry].joined(separator: "\u{1}")
+        let custom = customFields.map { "\($0.name)\u{1}\($0.value)\u{1}\($0.type)" }.joined(separator: "\u{2}")
+        let icon: String = { switch keepassIcon { case .standard(let i): return "s\(i)"; case .custom(let d): return "c\(d.count)"; case nil: return "" } }()
+        return [base, login, card, ident, custom, icon].joined(separator: "\u{1F}")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text(isNew ? L10n.Editor.newItem.localized : L10n.Editor.editing.localized)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(VGFont.title)
                 Spacer()
                 Button(action: { attemptDismiss() }) {
-                    Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary)
-                        .frame(width: 26, height: 26).background(Color(NSColor.controlBackgroundColor).opacity(0.6)).clipShape(Circle())
+                    Image(systemName: "xmark").font(VGFont.bodyEmphasis).foregroundColor(VGColor.secondary)
+                        .frame(width: 26, height: 26).background(VGColor.surface.opacity(0.6)).clipShape(Circle())
                 }
                 .buttonStyle(.plain).handCursor()
             }
-            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 12)
+            .padding(.horizontal, VGSpacing.huge).padding(.top, VGSpacing.xxxl).padding(.bottom, VGSpacing.xl)
 
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    FormField(L10n.Editor.nameLabel.localized) {
-                        TextField(L10n.Editor.namePlaceholder.localized, text: $name)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: name) { _ in markChanged() }
-                    }
-
-                    HStack(alignment: .top, spacing: 10) {
-                        FormField(L10n.Editor.typeLabel.localized) {
-                            Menu {
-                                ForEach(CipherType.allCases) { t in
-                                    Button(action: { type = t; markChanged() }) {
-                                        HStack { Text(t.localizedName); if type == t { Image(systemName: "checkmark") } }
-                                    }
-                                }
-                            } label: { dropdownLabel(type.localizedName) }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).handCursor()
+            Form {
+                Section(L10n.Editor.basicInfo.localized) {
+                    if appState.activeVaultKind != .keepass {
+                        Picker(L10n.Editor.typeLabel.localized, selection: $type) {
+                            ForEach(CipherType.allCases) { t in Text(t.localizedName).tag(t) }
                         }
-                        FormField(L10n.Editor.folderLabel.localized) {
-                            Menu {
-                                Button(action: { folderId = nil; markChanged() }) {
-                                    HStack { Text(L10n.noFolder.localized); if folderId == nil { Image(systemName: "checkmark") } }
-                                }
-                                ForEach(appState.folders) { folder in
-                                    Button(action: { folderId = folder.id; markChanged() }) {
-                                        HStack { Text(folder.name); if folderId == folder.id { Image(systemName: "checkmark") } }
-                                    }
-                                }
-                            } label: { dropdownLabel(appState.folders.first(where: { $0.id == folderId })?.name ?? L10n.noFolder.localized) }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).handCursor()
+                        .pickerStyle(.menu)
+                    }
+                    TextField(L10n.Editor.nameLabel.localized, text: $name,
+                              prompt: Text(L10n.Editor.namePlaceholder.localized))
+                    Picker(L10n.Editor.folderLabel.localized, selection: $folderId) {
+                        Text(L10n.noFolder.localized).tag(String?.none)
+                        ForEach(appState.folders) { folder in
+                            Text(folder.name).tag(Optional(folder.id))
                         }
                     }
-
-                    switch type {
-                    case .login: loginFields
-                    case .card: cardFields
-                    case .secureNote: EmptyView()
-                    case .identity: identityFields
-                    }
-
-                    FormField(L10n.Editor.notesLabel.localized) {
-                        TextEditor(text: $notes)
-                            .font(.system(size: 13)).frame(minHeight: 60).padding(4)
-                            .background(Color(NSColor.controlBackgroundColor)).cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
-                            .onChange(of: notes) { _ in markChanged() }
-                    }
-
-                    Divider()
-                    customFieldsSection
-                    Divider()
-
-                    Toggle(L10n.Editor.favorite.localized, isOn: $favorite).toggleStyle(.checkbox).handCursor()
+                    .pickerStyle(.menu)
                 }
-                .padding(24)
+
+                switch type {
+                case .login: loginSections
+                case .card: cardSection
+                case .secureNote: EmptyView()
+                case .identity: identitySections
+                }
+
+                Section(L10n.Editor.notesLabel.localized) {
+                    TextEditor(text: $notes)
+                        .font(VGFont.body).frame(minHeight: 80)
+                        .scrollContentBackground(.hidden)
+                }
+
+                customFieldsSection
+
+                if appState.activeVaultKind != .keepass {
+                    Section(L10n.Editor.advanced.localized) {
+                        Toggle(L10n.Editor.favorite.localized, isOn: $favorite).toggleStyle(.checkbox).handCursor()
+                    }
+                }
             }
+            .formStyle(.grouped)
+            .onChange(of: dirtySnapshot) { _, _ in markChanged() }
 
             Divider()
 
@@ -140,7 +146,7 @@ struct EditItemView: View {
                 Button(isNew ? L10n.create.localized : L10n.save.localized) { save() }
                     .buttonStyle(.borderedProminent).disabled(name.isEmpty).keyboardShortcut(.return)
             }
-            .padding(.horizontal, 24).padding(.vertical, 14)
+            .padding(.horizontal, VGSpacing.huge).padding(.vertical, VGSpacing.xl)
         }
         .frame(minWidth: 540, maxWidth: 540, minHeight: 500, maxHeight: 700)
         .onAppear { loadCipher() }
@@ -155,38 +161,225 @@ struct EditItemView: View {
     /// Mark the form dirty, but ignore the change storm fired while `loadCipher` populates @State.
     private func markChanged() { if ready { hasUnsavedChanges = true } }
 
-    // MARK: - TOTP QR import
+    // MARK: - Login sections
 
-    /// Extract the Base32 `secret` from an `otpauth://` URI (nil if not otpauth or no secret).
-    private func otpauthSecret(_ raw: String) -> String? {
-        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard s.lowercased().hasPrefix("otpauth://"), let comps = URLComponents(string: s) else { return nil }
-        let secret = (comps.queryItems ?? []).first { $0.name.lowercased() == "secret" }?.value
-        if let secret = secret, !secret.isEmpty { return secret }
-        return nil
-    }
-
-    /// A full-width field container that mimics `.roundedBorder` but lets icon
-    /// buttons sit *inside* on the trailing edge (so the input spans the full width).
-    @ViewBuilder private func fieldBox<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 4) { content() }
-            .padding(.horizontal, 6).frame(height: 24)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.textBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(NSColor.separatorColor), lineWidth: 1))
-    }
-
-    /// Full-width dropdown styled like a text field (label = current value + chevron).
-    private func dropdownLabel(_ text: String) -> some View {
-        HStack(spacing: 6) {
-            Text(text).font(.system(size: 13)).lineLimit(1).foregroundColor(.primary)
-            Spacer()
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 10)).foregroundColor(.secondary)
+    @ViewBuilder private var loginSections: some View {
+        Section(L10n.Editor.credentials.localized) {
+            TextField(L10n.Editor.loginLabel.localized, text: $username, prompt: Text("user@example.com"))
+            HStack(spacing: VGSpacing.s) {
+                Text(L10n.Editor.passwordLabel.localized)
+                    .frame(width: 100, alignment: .leading)
+                passwordControl
+            }
         }
-        .padding(.horizontal, 8).frame(height: 24).frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(NSColor.separatorColor), lineWidth: 1))
-        .contentShape(Rectangle())
+        Section(L10n.Editor.links.localized) {
+            TextField(L10n.Editor.urlLabel.localized, text: $url, prompt: Text("https://…"))
+        }
+        iconSection
+        Section("TOTP") {
+            Toggle(L10n.Editor.totpToggle.localized, isOn: $totpEnabled).toggleStyle(.checkbox).handCursor()
+            if totpEnabled {
+                totpControl
+                if let err = totpImportError {
+                    Text(err).font(VGFont.caption).foregroundColor(VGColor.danger)
+                }
+            }
+        }
+    }
+
+    private var passwordControl: some View {
+        fieldBox {
+            ZStack {
+                TextField("", text: $password, prompt: Text(L10n.Editor.passwordPlaceholder.localized))
+                    .textFieldStyle(.plain).font(VGFont.bodyMono).lineLimit(1).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(isPasswordVisible ? 1 : 0)
+                    .allowsHitTesting(isPasswordVisible)
+                SecureField("", text: $password, prompt: Text(L10n.Editor.passwordPlaceholder.localized))
+                    .textFieldStyle(.plain).font(VGFont.bodyMono).lineLimit(1).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(isPasswordVisible ? 0 : 1)
+                    .allowsHitTesting(!isPasswordVisible)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: { isPasswordVisible.toggle() }) {
+                Image(systemName: isPasswordVisible ? "eye.slash" : "eye").font(VGFont.body).foregroundColor(VGColor.secondary)
+            }.buttonStyle(.plain).frame(width: 22, height: 20).contentShape(Rectangle()).handCursor()
+                .help((isPasswordVisible ? L10n.Editor.hide : L10n.Editor.show).localized)
+            Button(action: { password = appState.generateFromLastTemplate(); isPasswordVisible = true }) {
+                Image(systemName: "arrow.triangle.2.circlepath").font(VGFont.body).foregroundColor(VGColor.secondary)
+            }.buttonStyle(.plain).frame(width: 22, height: 20).contentShape(Rectangle()).handCursor()
+                .help(L10n.Editor.generate.localized)
+            Menu {
+                ForEach(appState.passwordTemplates) { t in templateMenuButton(t) }
+            } label: {
+                Image(systemName: "chevron.down").font(VGFont.caption).foregroundColor(VGColor.secondary)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .frame(width: 18).contentShape(Rectangle()).handCursor()
+            .help(L10n.Editor.chooseTemplate.localized)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: 0)
+    }
+
+    private var totpControl: some View {
+        fieldBox {
+            TextField("", text: $totpSecret, prompt: Text("JBSWY3DPEHPK3PXP")).textFieldStyle(.plain).font(VGFont.bodyMono).lineLimit(1).multilineTextAlignment(.leading)
+            totpImportButtons
+        }
+        .frame(maxWidth: .infinity)
+        .overlay(RoundedRectangle(cornerRadius: VGRadius.medium)
+            .strokeBorder(isDragOver ? VGColor.accent : Color.clear, lineWidth: 2))
+        .onDrop(of: [UTType.image, UTType.fileURL, UTType.url, UTType.text], isTargeted: $isDragOver) { providers in
+            handleTOTPDrop(providers)
+        }
+    }
+
+    // MARK: - Card section
+
+    @ViewBuilder private var cardSection: some View {
+        Section(L10n.Editor.cardData.localized) {
+            TextField(L10n.Detail.cardHolder.localized, text: $cardholderName)
+            TextField(L10n.Detail.cardNumber.localized, text: $cardNumber, prompt: Text("4242 4242 4242 4242"))
+                .font(VGFont.bodyMono)
+            LabeledContent(L10n.Detail.cardExpiry.localized) {
+                HStack(spacing: VGSpacing.xs) {
+                    TextField("", text: $cardExpMonth, prompt: Text("MM"))
+                        .textFieldStyle(.roundedBorder).frame(width: 48).multilineTextAlignment(.center)
+                    Text("/").foregroundColor(VGColor.secondary)
+                    TextField("", text: $cardExpYear, prompt: Text("YY"))
+                        .textFieldStyle(.roundedBorder).frame(width: 48).multilineTextAlignment(.center)
+                }
+            }
+            SecureField(L10n.Detail.cardCvv.localized, text: $cardCode).font(VGFont.bodyMono)
+            TextField(L10n.Editor.cardBrand.localized, text: $cardBrand,
+                      prompt: Text(L10n.Editor.cardBrandPlaceholder.localized))
+        }
+    }
+
+    // MARK: - Identity sections
+
+    @ViewBuilder private var identitySections: some View {
+        Section(L10n.Editor.personalData.localized) {
+            TextField(L10n.Identity.title.localized, text: $idTitle, prompt: Text("Mr., Mrs., Dr."))
+            TextField(L10n.Identity.firstName.localized, text: $idFirstName)
+            TextField(L10n.Identity.middleName.localized, text: $idMiddleName)
+            TextField(L10n.Identity.lastName.localized, text: $idLastName)
+            TextField(L10n.Identity.username.localized, text: $idUsername)
+            TextField(L10n.Identity.company.localized, text: $idCompany)
+        }
+        Section(L10n.Editor.contacts.localized) {
+            TextField(L10n.Identity.email.localized, text: $idEmail, prompt: Text("user@example.com"))
+            TextField(L10n.Identity.phone.localized, text: $idPhone, prompt: Text(L10n.Identity.phonePlaceholder.localized))
+        }
+        Section(L10n.Editor.addressSection.localized) {
+            TextField(L10n.Identity.address1.localized, text: $idAddress1)
+            TextField(L10n.Identity.address2.localized, text: $idAddress2)
+            TextField(L10n.Identity.address3.localized, text: $idAddress3)
+            TextField(L10n.Identity.city.localized, text: $idCity)
+            TextField(L10n.Identity.state.localized, text: $idState)
+            TextField(L10n.Identity.postalCode.localized, text: $idPostalCode)
+            TextField(L10n.Identity.country.localized, text: $idCountry)
+        }
+        Section {
+            TextField(L10n.Identity.ssn.localized, text: $idSsn).font(VGFont.bodyMono)
+            TextField(L10n.Identity.passport.localized, text: $idPassport).font(VGFont.bodyMono)
+            TextField(L10n.Identity.license.localized, text: $idLicense).font(VGFont.bodyMono)
+        }
+    }
+
+    // MARK: - Custom fields
+
+    private func fieldTypeName(_ t: FieldType) -> String {
+        switch t {
+        case .hidden:  return L10n.Editor.fieldHidden.localized
+        case .boolean: return L10n.Editor.fieldBoolean.localized
+        default:       return L10n.Editor.fieldText.localized
+        }
+    }
+
+    private var customFieldsSection: some View {
+        Section(L10n.Editor.customFieldsLabel.localized) {
+            ForEach($customFields) { $field in
+                HStack(alignment: .center, spacing: VGSpacing.s) {
+                    fieldBox {
+                        VGTextField(text: $field.name, placeholder: L10n.Editor.fieldName.localized)
+                            .frame(maxWidth: .infinity)
+                            .focused($focusedCustomField, equals: .name(field.id))
+                    }
+                    .frame(width: 120)
+                    .contentShape(Rectangle())
+                    .onTapGesture { focusedCustomField = .name(field.id) }
+                    if field.type == .boolean {
+                        fieldBox {
+                            Menu {
+                                Button("misc.yes".localized) { field.value = "true" }
+                                Button("misc.no".localized) { field.value = "false" }
+                            } label: {
+                                HStack(spacing: VGSpacing.xs) {
+                                    Spacer(minLength: 0)
+                                    Text(field.value == "true" ? "misc.yes".localized : "misc.no".localized)
+                                        .font(VGFont.body).foregroundColor(VGColor.primary)
+                                    Image(systemName: "chevron.up.chevron.down").font(VGFont.caption2).foregroundColor(VGColor.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
+                            }
+                            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                            .frame(maxWidth: .infinity)
+                            .handCursor()
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        fieldBox {
+                            VGTextField(text: $field.value, placeholder: L10n.Editor.fieldValue.localized)
+                                .frame(maxWidth: .infinity)
+                                .focused($focusedCustomField, equals: .value(field.id))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { focusedCustomField = .value(field.id) }
+                    }
+                    Menu {
+                        Button(L10n.Editor.fieldText.localized) { $field.type.wrappedValue = .text }
+                        Button(L10n.Editor.fieldHidden.localized) { $field.type.wrappedValue = .hidden }
+                        Button(L10n.Editor.fieldBoolean.localized) { $field.type.wrappedValue = .boolean }
+                    } label: {
+                        HStack(spacing: VGSpacing.xs) {
+                            Text(fieldTypeName(field.type)).font(VGFont.body).foregroundColor(VGColor.primary)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.up.chevron.down").font(VGFont.caption2).foregroundColor(VGColor.secondary)
+                        }
+                        .frame(width: 60)
+                        .contentShape(Rectangle())
+                    }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                    .handCursor()
+                    Button(action: { customFields.removeAll(where: { $0.id == field.id }) }) {
+                        Image(systemName: "xmark").foregroundColor(VGColor.secondary)
+                    }.buttonStyle(.plain).frame(width: 20).handCursor()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button(action: { customFields.append(CipherField()) }) {
+                Label(L10n.Editor.addField.localized, systemImage: "plus")
+                    .font(VGFont.labelEmphasis).foregroundColor(VGColor.accent)
+            }.buttonStyle(.plain).handCursor()
+        }
+    }
+
+    /// A full-width field container that mimics a bordered field but lets icon buttons
+    /// sit *inside* on the trailing edge (so the input spans the full width).
+    @ViewBuilder private func fieldBox<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: VGSpacing.xs) { content() }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, VGSpacing.s)
+            .frame(height: 30, alignment: .center)
+            .clipped()
+            .background(RoundedRectangle(cornerRadius: VGRadius.medium).fill(VGColor.field))
+            .overlay(RoundedRectangle(cornerRadius: VGRadius.medium).strokeBorder(VGColor.separator, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: VGRadius.medium))
     }
 
     private func templateMenuButton(_ t: PasswordTemplate) -> some View {
@@ -194,9 +387,7 @@ struct EditItemView: View {
             appState.lastTemplateId = t.id
             password = CryptoService.generate(from: t)
             isPasswordVisible = true
-            markChanged()
         }) {
-            // Text only; the selected item shows a checkmark (native menu selection mark).
             if appState.lastTemplateId == t.id {
                 Label(t.displayName, systemImage: "checkmark")
             } else {
@@ -208,14 +399,25 @@ struct EditItemView: View {
     private var totpImportButtons: some View {
         HStack(spacing: 1) {
             Button(action: { pasteTOTPFromClipboard() }) {
-                Image(systemName: "qrcode").font(.system(size: 13)).foregroundColor(.secondary)
+                Image(systemName: "qrcode").font(VGFont.body).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).frame(width: 20, height: 20).contentShape(Rectangle()).handCursor()
                 .help(L10n.Editor.pasteFromClipboard.localized)
             Button(action: { loadTOTPQRFromFile() }) {
-                Image(systemName: "folder").font(.system(size: 13)).foregroundColor(.secondary)
+                Image(systemName: "folder").font(VGFont.body).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).frame(width: 20, height: 20).contentShape(Rectangle()).handCursor()
                 .help(L10n.Editor.loadQRFromFile.localized)
         }
+    }
+
+    // MARK: - TOTP QR import
+
+    /// Extract the Base32 `secret` from an `otpauth://` URI (nil if not otpauth or no secret).
+    private func otpauthSecret(_ raw: String) -> String? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard s.lowercased().hasPrefix("otpauth://"), let comps = URLComponents(string: s) else { return nil }
+        let secret = (comps.queryItems ?? []).first { $0.name.lowercased() == "secret" }?.value
+        if let secret = secret, !secret.isEmpty { return secret }
+        return nil
     }
 
     /// Prefer the bare Base32 secret so the field reads like a normal key.
@@ -225,7 +427,6 @@ struct EditItemView: View {
         guard !trimmed.isEmpty else { return }
         totpSecret = otpauthSecret(trimmed) ?? trimmed
         totpEnabled = true
-        markChanged()
         totpImportError = nil
     }
 
@@ -248,11 +449,10 @@ struct EditItemView: View {
 
     private func pasteTOTPFromClipboard() {
         let pb = NSPasteboard.general
-        // Expect an image in the clipboard; validate it actually contains a QR code.
         guard let imgs = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage], let img = imgs.first else {
             totpImportError = L10n.Editor.qrNoImageClipboard.localized; return
         }
-        importQR(image: img)   // sets qrNotRecognized if the image has no valid QR
+        importQR(image: img)
     }
 
     private func loadTOTPQRFromFile() {
@@ -292,267 +492,60 @@ struct EditItemView: View {
         return false
     }
 
-    // MARK: - Login Fields
+    // MARK: - KeePass icon picker
 
-    private var loginFields: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            FormField(L10n.Editor.loginLabel.localized) {
-                TextField("user@example.com", text: $username).textFieldStyle(.roundedBorder)
-                    .onChange(of: username) { _ in markChanged() }
-            }
-            FormField(L10n.Editor.passwordLabel.localized) {
-                fieldBox {
-                    Group {
-                        if isPasswordVisible {
-                            TextField("", text: $password)
-                                .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
-                                .onChange(of: password) { _ in markChanged() }
-                        } else {
-                            SecureField("", text: $password)
-                                .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
-                                .onChange(of: password) { _ in markChanged() }
-                        }
-                    }
-
-                    Button(action: { isPasswordVisible.toggle() }) {
-                        Image(systemName: isPasswordVisible ? "eye.slash" : "eye").font(.system(size: 13)).foregroundColor(.secondary)
-                    }.buttonStyle(.plain).frame(width: 22, height: 20).contentShape(Rectangle()).handCursor()
-                    .help((isPasswordVisible ? L10n.Editor.hide : L10n.Editor.show).localized)
-
-                    Button(action: { password = appState.generateFromLastTemplate(); isPasswordVisible = true; markChanged() }) {
-                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 13)).foregroundColor(.secondary)
-                    }.buttonStyle(.plain).frame(width: 22, height: 20).contentShape(Rectangle()).handCursor()
-                    .help(L10n.Editor.generate.localized)
-
-                    Menu {
-                        ForEach(appState.passwordTemplates) { t in templateMenuButton(t) }
-                    } label: {
-                        Image(systemName: "chevron.down").font(.system(size: 11)).foregroundColor(.secondary)
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                    .frame(width: 18).contentShape(Rectangle()).handCursor()
-                    .help(L10n.Editor.chooseTemplate.localized)
+    @ViewBuilder private var iconSection: some View {
+        if appState.activeVaultKind == .keepass {
+            Section {
+                HStack(spacing: VGSpacing.s) {
+                    Text("editor.icon".localized).font(VGFont.body).foregroundColor(VGColor.primary)
+                    Spacer()
+                    Image(systemName: iconExpanded ? "chevron.down" : "chevron.right")
+                        .font(VGFont.caption).foregroundColor(VGColor.secondary)
                 }
-            }
-            FormField(L10n.Editor.urlLabel.localized) {
-                TextField("https://...", text: $url).textFieldStyle(.roundedBorder)
-                    .onChange(of: url) { _ in markChanged() }
-            }
-            Toggle(isOn: $totpEnabled) {
-                Label(L10n.Editor.totpToggle.localized, systemImage: "lock.shield").font(.system(size: 13))
-            }.toggleStyle(.checkbox).handCursor()
-            if totpEnabled {
-                FormField(L10n.Editor.totpSecretLabel.localized) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        fieldBox {
-                            TextField("JBSWY3DPEHPK3PXP", text: $totpSecret).textFieldStyle(.plain)
-                                .font(.system(size: 13, design: .monospaced))
-                                .onChange(of: totpSecret) { _ in markChanged(); totpImportError = nil }
-                            totpImportButtons
-                        }
-                        if let err = totpImportError {
-                            Text(err).font(.system(size: 11)).foregroundColor(.red)
-                        }
-                    }
-                    .padding(2)
-                    .overlay(RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(isDragOver ? Color.accentColor : Color.clear, lineWidth: 2))
-                    .onDrop(of: [UTType.image, UTType.fileURL, UTType.url, UTType.text], isTargeted: $isDragOver) { providers in
-                        handleTOTPDrop(providers)
-                    }
-                }
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation { iconExpanded.toggle() } }
+                .handCursor()
+                if iconExpanded { iconGrid }
             }
         }
     }
 
-    // MARK: - Card Fields
-
-    private var cardFields: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            FormField(L10n.Detail.cardHolder.localized) {
-                TextField("", text: $cardholderName).textFieldStyle(.roundedBorder)
-            }
-            FormField(L10n.Detail.cardNumber.localized) {
-                TextField("4242 4242 4242 4242", text: $cardNumber).textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13, design: .monospaced))
-            }
-            HStack(spacing: 10) {
-                FormField(L10n.Detail.cardExpiry.localized) {
-                    HStack(spacing: 4) {
-                        TextField("MM", text: $cardExpMonth).textFieldStyle(.roundedBorder).frame(width: 50)
-                        Text("/").foregroundColor(.secondary)
-                        TextField("YY", text: $cardExpYear).textFieldStyle(.roundedBorder).frame(width: 50)
-                    }
-                }
-                FormField(L10n.Detail.cardCvv.localized) {
-                    SecureField("", text: $cardCode).textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
-                }
-            }
-            FormField("Brand") {
-                TextField("Visa, Mastercard...", text: $cardBrand).textFieldStyle(.roundedBorder)
-            }
+    private var iconGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 34), spacing: VGSpacing.s)], spacing: VGSpacing.s) {
+            ForEach(0..<69, id: \.self) { idx in iconCell(idx) }
         }
+        .padding(.vertical, VGSpacing.xs)
     }
 
-    // MARK: - Identity Fields (NEW — full form)
-
-    private var identityFields: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            FormField(L10n.Identity.title.localized) {
-                TextField("Mr., Mrs., Dr.", text: $idTitle).textFieldStyle(.roundedBorder)
-                    .onChange(of: idTitle) { _ in markChanged() }
-            }
-            HStack(spacing: 10) {
-                FormField(L10n.Identity.firstName.localized) {
-                    TextField("", text: $idFirstName).textFieldStyle(.roundedBorder)
-                        .onChange(of: idFirstName) { _ in markChanged() }
-                }
-                FormField(L10n.Identity.middleName.localized) {
-                    TextField("", text: $idMiddleName).textFieldStyle(.roundedBorder)
-                        .onChange(of: idMiddleName) { _ in markChanged() }
-                }
-                FormField(L10n.Identity.lastName.localized) {
-                    TextField("", text: $idLastName).textFieldStyle(.roundedBorder)
-                        .onChange(of: idLastName) { _ in markChanged() }
-                }
-            }
-            FormField(L10n.Identity.username.localized) {
-                TextField("", text: $idUsername).textFieldStyle(.roundedBorder)
-                    .onChange(of: idUsername) { _ in markChanged() }
-            }
-            FormField(L10n.Identity.company.localized) {
-                TextField("", text: $idCompany).textFieldStyle(.roundedBorder)
-                    .onChange(of: idCompany) { _ in markChanged() }
-            }
-            HStack(spacing: 10) {
-                FormField(L10n.Identity.email.localized) {
-                    TextField("user@example.com", text: $idEmail).textFieldStyle(.roundedBorder)
-                        .onChange(of: idEmail) { _ in markChanged() }
-                }
-                FormField(L10n.Identity.phone.localized) {
-                    TextField(L10n.Identity.phonePlaceholder.localized, text: $idPhone).textFieldStyle(.roundedBorder)
-                        .onChange(of: idPhone) { _ in markChanged() }
-                }
-            }
-
-            Divider()
-
-            FormField(L10n.Identity.address1.localized) {
-                TextField("", text: $idAddress1).textFieldStyle(.roundedBorder)
-                    .onChange(of: idAddress1) { _ in markChanged() }
-            }
-            FormField(L10n.Identity.address2.localized) {
-                TextField("", text: $idAddress2).textFieldStyle(.roundedBorder)
-                    .onChange(of: idAddress2) { _ in markChanged() }
-            }
-            FormField(L10n.Identity.address3.localized) {
-                TextField("", text: $idAddress3).textFieldStyle(.roundedBorder)
-                    .onChange(of: idAddress3) { _ in markChanged() }
-            }
-            HStack(spacing: 10) {
-                FormField(L10n.Identity.city.localized) {
-                    TextField("", text: $idCity).textFieldStyle(.roundedBorder)
-                        .onChange(of: idCity) { _ in markChanged() }
-                }
-                FormField(L10n.Identity.state.localized) {
-                    TextField("", text: $idState).textFieldStyle(.roundedBorder)
-                        .onChange(of: idState) { _ in markChanged() }
-                }
-            }
-            HStack(spacing: 10) {
-                FormField(L10n.Identity.postalCode.localized) {
-                    TextField("", text: $idPostalCode).textFieldStyle(.roundedBorder)
-                        .onChange(of: idPostalCode) { _ in markChanged() }
-                }
-                FormField(L10n.Identity.country.localized) {
-                    TextField("", text: $idCountry).textFieldStyle(.roundedBorder)
-                        .onChange(of: idCountry) { _ in markChanged() }
-                }
-            }
-
-            Divider()
-
-            HStack(spacing: 10) {
-                FormField(L10n.Identity.ssn.localized) {
-                    TextField("", text: $idSsn).textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
-                        .onChange(of: idSsn) { _ in markChanged() }
-                }
-                FormField(L10n.Identity.passport.localized) {
-                    TextField("", text: $idPassport).textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
-                        .onChange(of: idPassport) { _ in markChanged() }
-                }
-            }
-            FormField(L10n.Identity.license.localized) {
-                TextField("", text: $idLicense).textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13, design: .monospaced))
-                    .onChange(of: idLicense) { _ in markChanged() }
-            }
+    private func iconCell(_ idx: Int) -> some View {
+        let selected = (keepassIcon == KeePassIconRef.standard(idx))
+        return Button(action: { keepassIcon = .standard(idx) }) {
+            Image(systemName: KeePassIconRef.sfSymbol(forStandard: idx))
+                .font(VGFont.body)
+                .foregroundColor(selected ? VGColor.onAccent : VGColor.secondary)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: VGRadius.small)
+                    .fill(selected ? VGColor.accent : VGColor.surface))
         }
-    }
-
-    // MARK: - Custom Fields
-
-    private var customFieldsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(L10n.Editor.customFieldsLabel.localized, systemImage: "square.stack.3d.up")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-            }
-            VStack(spacing: 6) {
-                ForEach($customFields) { $field in
-                    HStack(spacing: 6) {
-                        TextField(L10n.Editor.fieldName.localized, text: $field.name).textFieldStyle(.roundedBorder).frame(minWidth: 100)
-                        if field.type == .boolean {
-                            Picker("", selection: $field.value) {
-                                Text("misc.yes".localized).tag("true"); Text("misc.no".localized).tag("false")
-                            }.frame(maxWidth: .infinity)
-                        } else {
-                            TextField(L10n.Editor.fieldValue.localized, text: $field.value).textFieldStyle(.roundedBorder)
-                        }
-                        Picker("", selection: $field.type) {
-                            Text(L10n.Editor.fieldText.localized).tag(FieldType.text)
-                            Text(L10n.Editor.fieldHidden.localized).tag(FieldType.hidden)
-                            Text(L10n.Editor.fieldBoolean.localized).tag(FieldType.boolean)
-                        }.frame(width: 100)
-                        Button(action: { customFields.removeAll(where: { $0.id == field.id }) }) {
-                            Image(systemName: "xmark").foregroundColor(.secondary)
-                        }.buttonStyle(.plain).handCursor()
-                    }
-                    .padding(8).background(Color(NSColor.controlBackgroundColor)).cornerRadius(6)
-                }
-            }
-            Button(action: { customFields.append(CipherField()); markChanged() }) {
-                Label(L10n.Editor.addField.localized, systemImage: "plus")
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(.accentColor)
-            }.buttonStyle(.plain).handCursor()
-        }
+        .buttonStyle(.plain).handCursor()
     }
 
     // MARK: - Load / Save
 
     private func loadCipher() {
-        // Enable change-tracking only after the initial @State population settles,
-        // so the onChange storm from loading does not mark the form dirty.
         defer { DispatchQueue.main.async { ready = true } }
         guard let c = cipher else {
-            // New item: prefill type/folder/favorite from the section we created it in,
-            // and start with the password field visible (we are about to type/generate it).
             if let t = appState.newItemPrefillType { type = t }
             folderId = appState.newItemPrefillFolderId
             favorite = appState.newItemPrefillFavorite
-            // Manual entry stays hidden by default (shoulder-surfing safety); the user can
-            // reveal it with the eye. Generation explicitly reveals it elsewhere.
             isPasswordVisible = false
             return
         }
-        // Existing item: password stays hidden until the eye is tapped.
         isPasswordVisible = false
         name = c.name; type = c.type; folderId = c.folderId; favorite = c.favorite
         notes = c.notes ?? ""; customFields = c.fields ?? []
+        keepassIcon = c.keepassIcon
         if let l = c.login {
             username = l.username ?? ""; password = l.password ?? ""; url = l.uris?.first?.uri ?? ""
             totpEnabled = !(l.totp?.isEmpty ?? true); totpSecret = l.totp.map { otpauthSecret($0) ?? $0 } ?? ""
@@ -579,6 +572,7 @@ struct EditItemView: View {
         newCipher.name = name; newCipher.type = type; newCipher.folderId = folderId; newCipher.favorite = favorite
         newCipher.notes = notes.isEmpty ? nil : notes
         newCipher.fields = customFields.filter { !$0.name.isEmpty }
+        newCipher.keepassIcon = keepassIcon
 
         switch type {
         case .login:
@@ -613,15 +607,3 @@ struct EditItemView: View {
         Task { await appState.saveCipher(newCipher, isNew: isNew); dismiss() }
     }
 }
-
-struct FormField<Content: View>: View {
-    let label: String; @ViewBuilder let content: Content
-    init(_ label: String, @ViewBuilder content: () -> Content) { self.label = label; self.content = content() }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 12, weight: .semibold)).foregroundColor(.secondary)
-            content
-        }
-    }
-}
-

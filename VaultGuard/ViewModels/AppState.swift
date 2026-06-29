@@ -104,9 +104,10 @@ final class AppState: ObservableObject {
     @Published var showDeleteConfirm = false
     @Published var deletingCipher: VaultCipher?
     @Published var showGenerator = false
-    @Published var showSettings = false
+    @Published var showSends = false
     @Published var showAddAccount = false
     @Published var toasts: [ToastMessage] = []
+    @Published var sends: [SendSummary] = []
 
     // 2FA
     @Published var show2FA = false
@@ -208,6 +209,15 @@ final class AppState: ObservableObject {
     var lastActivityDate = Date()
     var autoLockTimer: Timer?
     var sleepObservers: [NSObjectProtocol] = []
+
+    /// In-memory backend for the active KeePass session (holds file bytes + credentials so the
+    /// vault can be re-read while unlocked). Created in `openKeePass`, cleared in `lock()`.
+    /// nil for server (Bitwarden) accounts.
+    var keePassBackend: KeePassBackend?
+
+    /// Security-scoped bookmark to the active KeePass .kdbx, kept in memory so the file can be
+    /// written back during this session (even when biometric persistence wasn't requested).
+    var keePassFileBookmark: Data?
 
     struct PendingLogin {
         let serverURL: String; let email: String; let passwordHash: String

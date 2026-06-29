@@ -100,7 +100,11 @@ final class TOTPService {
 
         if cfg.algorithm == .steam { return steamEncode(binary) }
 
-        let otp = binary % UInt32(pow(10, Double(cfg.digits)))
+        // Modulo in UInt64: 10^10 exceeds UInt32.max, so a Double->UInt32 conversion
+        // would trap at runtime for digits == 10 (a crafted/odd otpauth URI in a vault
+        // item must never crash the app).
+        let modulus = (0..<cfg.digits).reduce(UInt64(1)) { m, _ in m * 10 }
+        let otp = UInt64(binary) % modulus
         return String(format: "%0\(cfg.digits)d", otp)
     }
 

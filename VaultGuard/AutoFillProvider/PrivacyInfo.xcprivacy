@@ -8,10 +8,10 @@
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array/>
-	<!-- The AutoFill extension compiles shared files (LocalizationManager, Models) that read
-	     UserDefaults, so it declares the same UserDefaults required-reason as the app.
-	     CA92.1 = access info from user defaults only accessible to the app/extension group.
-	     ACTION BEFORE SUBMISSION: confirm via Xcode Archive > Validate. -->
+	<!-- The AutoFill extension reads UserDefaults (the App Group suite for the AutoFill TTL,
+	     and shared files such as LocalizationManager / Models), so it declares the same
+	     UserDefaults required-reason as the app. It collects no data and performs no tracking.
+	     CA92.1 = access user defaults accessible only to the app/extension group. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>

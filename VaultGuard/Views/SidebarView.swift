@@ -4,24 +4,12 @@ import AppKit
 struct SidebarView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var accounts: AccountManager
-    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            vaultPicker
-
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.system(size: 12))
-                TextField("\(L10n.search.localized)… ⌘K", text: $appState.searchText)
-                    .textFieldStyle(.plain).font(.system(size: 13)).focused($searchFocused)
-                if !appState.searchText.isEmpty {
-                    Button(action: { appState.searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill").foregroundColor(.secondary).font(.system(size: 11))
-                    }.buttonStyle(.plain)
-                }
+            if appState.activeVaultKind != .keepass {
+                vaultPicker
             }
-            .padding(8).background(Color(NSColor.controlBackgroundColor)).cornerRadius(8)
-            .padding(.horizontal, 10).padding(.top, 4).padding(.bottom, 4)
 
             List(selection: Binding<VaultFilter?>(
                 get: { appState.filter },
@@ -29,23 +17,33 @@ struct SidebarView: View {
             )) {
                 Section(L10n.Sidebar.vault.localized) {
                     sidebarRow(.all, icon: "tray.fill", label: L10n.Sidebar.allItems.localized)
-                    sidebarRow(.favorites, icon: "star.fill", label: L10n.Sidebar.favorites.localized)
+                    if appState.activeVaultKind != .keepass {
+                        sidebarRow(.favorites, icon: "star.fill", label: L10n.Sidebar.favorites.localized)
+                    }
                 }
 
+                if appState.activeVaultKind != .keepass {
                 Section(L10n.Sidebar.types.localized) {
                     ForEach(CipherType.allCases) { type in
                         sidebarRow(.type(type), icon: type.icon, label: type.localizedName)
                     }
                 }
+                }
 
                 if appState.isPersonalVault {
                     if !appState.activeFolders.isEmpty {
                         Section(L10n.Sidebar.folders.localized) {
-                            ForEach(appState.activeFolders) { folder in
-                                folderRow(folder)
-                            }
-                            .onMove { source, dest in
-                                appState.moveFolderInOrder(from: source, to: dest)
+                            if appState.activeVaultKind == .keepass {
+                                OutlineGroup(folderTree(appState.activeFolders), children: \.children) { node in
+                                    folderRow(node.folder)
+                                }
+                            } else {
+                                ForEach(appState.activeFolders) { folder in
+                                    folderRow(folder)
+                                }
+                                .onMove { source, dest in
+                                    appState.moveFolderInOrder(from: source, to: dest)
+                                }
                             }
                         }
                     }
@@ -67,7 +65,7 @@ struct SidebarView: View {
 
             Divider()
 
-            VStack(spacing: 2) {
+            VStack(spacing: VGSpacing.xxs) {
                 if appState.isPersonalVault {
                     Button(action: { appState.folderInputName = ""; appState.showCreateFolder = true }) {
                         Label(L10n.Sidebar.newFolder.localized, systemImage: "folder.badge.plus")
@@ -80,16 +78,22 @@ struct SidebarView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(SidebarButtonStyle())
 
-                Button(action: { appState.showSettings = true }) {
+                if appState.activeVaultKind == .bitwarden {
+                    Button(action: { appState.showSends = true; Task { await appState.loadSends() } }) {
+                        Label(L10n.Sidebar.sends.localized, systemImage: "paperplane.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }.buttonStyle(SidebarButtonStyle())
+                }
+
+                SettingsLink {
                     Label(L10n.Sidebar.settings.localized, systemImage: "gearshape.fill")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(SidebarButtonStyle())
 
                 profileMenu
             }
-            .padding(8)
+            .padding(VGSpacing.m)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in searchFocused = true }
         .alert(L10n.Folder.newTitle.localized, isPresented: $appState.showCreateFolder) {
             TextField(L10n.Folder.namePlaceholder.localized, text: $appState.folderInputName)
             Button(L10n.create.localized) {
@@ -141,27 +145,32 @@ struct SidebarView: View {
                 }
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: VGSpacing.m) {
                 Image(systemName: appState.isPersonalVault ? "person.fill" : "person.2.wave.2.fill")
-                    .font(.system(size: 12)).foregroundColor(.accentColor)
-                Text(appState.activeVaultName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    .font(VGFont.label).foregroundColor(VGColor.accent)
+                Text(appState.activeVaultName).font(VGFont.bodyEmphasis).lineLimit(1)
                 Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10)).foregroundColor(.secondary)
+                Image(systemName: "chevron.up.chevron.down").font(VGFont.caption2).foregroundColor(VGColor.secondary)
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Color(NSColor.controlBackgroundColor)).cornerRadius(8)
+            .padding(.horizontal, VGSpacing.l).padding(.vertical, VGSpacing.m)
+            .background(VGColor.surface).cornerRadius(VGRadius.medium)
         }
-        .buttonStyle(.plain).padding(.horizontal, 10).padding(.top, 8)
+        .buttonStyle(.plain).padding(.horizontal, VGSpacing.l).padding(.top, VGSpacing.m)
     }
 
     // MARK: - Rows
+
+    /// Trailing item-count badge shared by sidebar and folder rows.
+    private func countBadge(_ filter: VaultFilter) -> some View {
+        Text("\(appState.countFor(filter: filter))")
+            .font(VGFont.caption).foregroundColor(VGColor.secondary).monospacedDigit()
+    }
 
     private func sidebarRow(_ filter: VaultFilter, icon: String, label: String) -> some View {
         HStack {
             Label(label, systemImage: icon)
             Spacer()
-            Text("\(appState.countFor(filter: filter))")
-                .font(.system(size: 11)).foregroundColor(.secondary).monospacedDigit()
+            countBadge(filter)
         }.tag(filter).handCursor()
     }
 
@@ -169,8 +178,7 @@ struct SidebarView: View {
         HStack {
             Label(folder.name, systemImage: "folder.fill")
             Spacer()
-            Text("\(appState.countFor(filter: .folder(folder.id)))")
-                .font(.system(size: 11)).foregroundColor(.secondary).monospacedDigit()
+            countBadge(.folder(folder.id))
         }
         .tag(VaultFilter.folder(folder.id))
         .contextMenu {
@@ -186,6 +194,18 @@ struct SidebarView: View {
             }
         }
         .handCursor()
+    }
+
+    /// Build a nested folder tree from the flat list using parentId (KeePass groups).
+    private func folderTree(_ folders: [VaultFolder]) -> [FolderNode] {
+        let byParent = Dictionary(grouping: folders, by: { $0.parentId })
+        func build(_ parent: String?) -> [FolderNode] {
+            (byParent[parent] ?? []).map { f in
+                let kids = build(f.id)
+                return FolderNode(folder: f, children: kids.isEmpty ? nil : kids)
+            }
+        }
+        return build(nil)
     }
 
     // MARK: - Profile Menu
@@ -211,35 +231,42 @@ struct SidebarView: View {
             Button(L10n.Sidebar.lock.localized) { appState.lock() }
             Button(L10n.Sidebar.logout.localized, role: .destructive) { appState.logout() }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: VGSpacing.m) {
                 Circle()
                     .fill(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 28, height: 28)
-                    .overlay { Text(String(appState.profileName.prefix(1)).uppercased()).font(.system(size: 11, weight: .bold)).foregroundColor(.white) }
+                    .overlay { Text(String(appState.profileName.prefix(1)).uppercased()).font(VGFont.captionBold).foregroundColor(VGColor.onAccent) }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(accounts.activeAccount?.label ?? (appState.profileName.isEmpty ? "misc.user".localized : appState.profileName))
-                        .font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                    Text(appState.profileEmail).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                        .font(VGFont.labelEmphasis).lineLimit(1)
+                    if !appState.profileEmail.isEmpty {
+                        Text(appState.profileEmail).font(VGFont.caption2).foregroundColor(VGColor.secondary).lineLimit(1)
+                    }
                 }
                 Spacer()
             }
-            .padding(.horizontal, 8).padding(.vertical, 6).contentShape(Rectangle())
+            .padding(.horizontal, VGSpacing.m).padding(.vertical, VGSpacing.s).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .handCursor()
     }
 }
 
+struct FolderNode: Identifiable {
+    let folder: VaultFolder
+    var children: [FolderNode]?
+    var id: String { folder.id }
+}
+
 struct SidebarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .padding(.horizontal, 8).padding(.vertical, 6)
+            .font(VGFont.bodyMedium)
+            .padding(.horizontal, VGSpacing.m).padding(.vertical, VGSpacing.s)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(configuration.isPressed ? Color.accentColor.opacity(0.1) : .clear)
-            .cornerRadius(6)
+            .background(configuration.isPressed ? VGColor.accent.opacity(0.1) : .clear)
+            .cornerRadius(VGRadius.small)
             .contentShape(Rectangle())
             .handCursor()
     }
 }
-

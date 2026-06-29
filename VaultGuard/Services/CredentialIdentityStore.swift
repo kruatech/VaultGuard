@@ -9,7 +9,7 @@ enum CredentialIdentityStoreManager {
     static func update(with ciphers: [VaultCipher]) {
         ASCredentialIdentityStore.shared.getState { state in
             guard state.isEnabled else { return }
-            var identities: [ASPasswordCredentialIdentity] = []
+            var identities: [any ASCredentialIdentity] = []
             for cipher in ciphers {
                 guard let login = cipher.login, let user = login.username, !user.isEmpty else { continue }
                 for uri in (login.uris ?? []) {
@@ -20,7 +20,7 @@ enum CredentialIdentityStoreManager {
                         serviceIdentifier: service, user: user, recordIdentifier: cipher.id))
                 }
             }
-            ASCredentialIdentityStore.shared.replaceCredentialIdentities(with: identities) { _, _ in }
+            Task { try? await ASCredentialIdentityStore.shared.replaceCredentialIdentities(identities) }
         }
     }
 

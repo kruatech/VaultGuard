@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Populated at build time; read by SharedConfig to construct keychain access
+	     groups without hard-coding a Team ID. Includes the trailing dot. -->
+	<key>VGAppIdentifierPrefix</key>
+	<string>$(AppIdentifierPrefix)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
@@ -14,7 +18,7 @@
 		<string>ru</string>
 	</array>
 	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
+	<string>14.0</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

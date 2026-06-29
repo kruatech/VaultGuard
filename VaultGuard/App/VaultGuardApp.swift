@@ -3,22 +3,20 @@ import SwiftUI
 struct VaultGuardApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var localization = LocalizationManager.shared
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
                 .environmentObject(appState.accounts)
                 .environmentObject(localization)
-                .frame(minWidth: 900, minHeight: 600)
+                .background(MainWindowAccessor())
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
+                    appDelegate.appState = appState
                     appState.applyTheme()
                 }
-                .onOpenURL { url in
-                    guard url.scheme == "vaultguard", url.host == "unlock" else { return }
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
-                }
+                .onOpenURL(perform: handleOpenURL)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -33,9 +31,34 @@ struct VaultGuardApp: App {
                 Button(L10n.search.localized) {
                     NotificationCenter.default.post(name: .focusSearch, object: nil)
                 }
+                .keyboardShortcut("f", modifiers: .command)
+                // Second binding (⌘K) for the same action; hidden so the menu shows ⌘F only.
+                Button(L10n.search.localized) {
+                    NotificationCenter.default.post(name: .focusSearch, object: nil)
+                }
                 .keyboardShortcut("k", modifiers: .command)
+                .hidden()
+            }
+            CommandGroup(before: .windowList) {
+                Divider()
+                Button(L10n.Window.showMain.localized) {
+                    MainWindowController.shared.showMainWindow()
+                }
+                .keyboardShortcut("0", modifiers: .command)
             }
         }
+
+        Settings {
+            SettingsView()
+                .environmentObject(appState)
+                .environmentObject(appState.accounts)
+                .environmentObject(localization)
+        }
+    }
+
+    private func handleOpenURL(_ url: URL) {
+        guard url.scheme == "vaultguard", url.host == "unlock" else { return }
+        MainWindowController.shared.showMainWindow()
     }
 }
 
@@ -74,12 +97,43 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: appState.isUnlocked)
+        .onAppear { applyWindowSize(unlocked: appState.isUnlocked) }
+        .onChange(of: appState.isUnlocked) { _, newValue in applyWindowSize(unlocked: newValue) }
         .sheet(isPresented: $appState.showAddAccount) {
             AuthView(isAddMode: true)
                 .environmentObject(appState)
                 .environmentObject(appState.accounts)
         }
     }
+    /// Login/unlock screen gets a compact window; the unlocked MainView needs a large one.
+    /// Same shared window, so resize the NSWindow on the locked/unlocked transition.
+    private func applyWindowSize(unlocked: Bool) {
+        DispatchQueue.main.async {
+            MainWindowController.shared.withMainWindow { w in
+                if unlocked {
+                    w.maxSize = NSSize(
+                        width: CGFloat.greatestFiniteMagnitude,
+                        height: CGFloat.greatestFiniteMagnitude
+                    )
+                    w.minSize = NSSize(width: 900, height: 600)
+                    if w.frame.width < 900 || w.frame.height < 600 {
+                        w.setContentSize(NSSize(width: 1100, height: 720))
+                        w.center()
+                    }
+                } else {
+                    // Auth/login window: fixed height (non-resizable vertically).
+                    w.minSize = NSSize(width: 500, height: 770)
+                    w.maxSize = NSSize(
+                        width: CGFloat.greatestFiniteMagnitude,
+                        height: 770
+                    )
+                    w.setContentSize(NSSize(width: 525, height: 770))
+                    w.center()
+                }
+            }
+        }
+    }
+
     private func installEventMonitor() {
         // Remove any existing monitor first to prevent leaks
         removeEventMonitor()
@@ -95,6 +149,31 @@ struct ContentView: View {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
+    }
+}
+
+/// Restores the main window when the user reopens the running app from the Dock
+/// or Finder. Explicit app termination still locks the active vault first.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var appState: AppState?
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        MainWindowController.shared.showMainWindow()
+        return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        appState?.lock()
     }
 }
 
