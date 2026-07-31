@@ -53,7 +53,7 @@ enum KDBXVaultMapper {
         private var elementStack: [String] = []
         private var chars = ""
 
-        private struct GroupFrame { let id: String; let name: String; let isRoot: Bool; let inRecycleBin: Bool; let path: String }
+        private struct GroupFrame { let id: String; let name: String; let isRoot: Bool; let inRecycleBin: Bool; let isRecycleBinRoot: Bool; let path: String }
         private var groupStack: [GroupFrame] = []
         private var pendingGroupId: String?
         private var pendingGroupName: String?
@@ -145,12 +145,12 @@ enum KDBXVaultMapper {
                 if parent == "Group" {
                     pendingGroupName = chars
                     let id = pendingGroupId ?? ""
-                    let inRB = (groupStack.last?.inRecycleBin ?? false)
-                        || (recycleBinId != nil && id == recycleBinId)
+                    let isRecycleBinRoot = (recycleBinId != nil && id == recycleBinId)
+                    let inRB = (groupStack.last?.inRecycleBin ?? false) || isRecycleBinRoot
                     let parentPath = (groupStack.last.map { $0.isRoot ? "" : $0.path }) ?? ""
                     let path = parentPath.isEmpty ? chars : parentPath + "/" + chars
-                    groupStack.append(GroupFrame(id: id, name: chars,
-                                                 isRoot: pendingGroupParentIsRoot, inRecycleBin: inRB, path: path))
+                    groupStack.append(GroupFrame(id: id, name: chars, isRoot: pendingGroupParentIsRoot,
+                                                 inRecycleBin: inRB, isRecycleBinRoot: isRecycleBinRoot, path: path))
                 }
             case "DatabaseName":
                 if parent == "Meta" { databaseName = chars }
@@ -204,9 +204,9 @@ enum KDBXVaultMapper {
                 historyDepth -= 1
             case "Group":
                 let frame = groupStack.removeLast()
-                if !frame.isRoot, !frame.inRecycleBin {
+                if !frame.isRoot, (!frame.inRecycleBin || frame.isRecycleBinRoot) {
                     let parentId: String? = (groupStack.last?.isRoot ?? true) ? nil : groupStack.last?.id
-                    folders.append(VaultFolder(id: frame.id, name: frame.name, revisionDate: nil, parentId: parentId))
+                    folders.append(VaultFolder(id: frame.id, name: frame.path, revisionDate: nil, parentId: parentId))
                 }
             default:
                 break
