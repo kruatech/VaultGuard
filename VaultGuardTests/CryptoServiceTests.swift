@@ -20,7 +20,12 @@ final class CryptoServiceTests: XCTestCase {
 
     /// Deterministic 64-byte key (32 enc + 32 mac). Different `seed` → different key.
     private func key64(_ seed: Int = 0) -> SymmetricCryptoKey {
-        SymmetricCryptoKey(key: Data((0..<64).map { UInt8(((($0 &* 31) &+ seed) % 251 + 1) & 0xFF) }))
+        let bytes: [UInt8] = (0..<64).map { i -> UInt8 in
+            let base: Int = (i &* 31) &+ seed
+            let mod: Int = (base % 251) + 1
+            return UInt8(mod & 0xFF)
+        }
+        return SymmetricCryptoKey(key: Data(bytes))
     }
 
     /// Assert that `expr` throws the expected `CryptoError` case.
