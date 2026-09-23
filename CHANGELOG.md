@@ -62,6 +62,9 @@ what was found and why is in `docs/audit-response.md`.
 - The zip attachment preview is parsed once, off the main thread; the outline no longer
   collapses whenever the screen redraws.
 - The sign-in screen warns when the server address uses plain `http://`.
+- The signed App Store release workflow no longer fails on a tag push when the signing
+  secrets are not configured: it skips the build with a warning that names the missing
+  secrets. A manual run without them still fails, since a signed build was asked for.
 
 ### Removed
 

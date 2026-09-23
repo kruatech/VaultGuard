@@ -1,6 +1,8 @@
 # Development
 
-How to build VaultGuard, run its tests, and change the parts that need care.
+How to build VaultGuard, run its tests, and change the parts that need care. For a map of
+the codebase — targets, layers, `AppState`, the services — see
+[architecture.md](architecture.md).
 
 ## Requirements
 

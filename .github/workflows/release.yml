@@ -51,7 +51,45 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Every step below needs the signing and App Store Connect secrets. Without them the
+      # certificate import failed on an empty .p12 — "Unable to decode the provided data" — and
+      # every tag got a red run that said nothing about the release itself.
+      #
+      # Missing secrets on a tag push: the build is skipped with a visible warning and the run
+      # passes, so a repository that uploads from Xcode by hand does not carry a permanent
+      # failure. Missing secrets on a manual run: it fails, because someone explicitly asked
+      # for a signed build and skipping it quietly would hide that it did not happen.
+      #
+      # Secrets cannot be read in `if:` expressions, so this step reads them from the
+      # environment and exposes a flag the other steps test.
+      - name: Check signing secrets
+        id: preflight
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          missing=()
+          for name in BUILD_CERTIFICATE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD \
+                      ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_API_KEY_BASE64 DEVELOPMENT_TEAM; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "signing secrets present"
+            exit 0
+          fi
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "::error::signed build requested but secrets are missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "::warning::signed App Store build skipped — repository secrets not set: ${missing[*]}"
+
       - name: Import signing certificate into a temporary keychain
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -70,6 +108,7 @@ jobs:
           rm -f "$cert"
 
       - name: Install App Store Connect API key
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         env:
           ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
         run: |
@@ -79,12 +118,15 @@ jobs:
           echo "$ASC_API_KEY_BASE64" | base64 --decode > "$dir/AuthKey_${ASC_API_KEY_ID}.p8"
 
       - name: Install XcodeGen
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         run: brew install xcodegen
 
       - name: Generate Xcode project
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         run: xcodegen generate
 
       - name: Write ExportOptions.plist
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         run: |
           set -euo pipefail
           plist="$RUNNER_TEMP/ExportOptions.plist"
@@ -100,6 +142,7 @@ jobs:
           "$pb" -c "Print" "$plist"
 
       - name: Archive (signed)
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -114,6 +157,7 @@ jobs:
             -quiet
 
       - name: Export for App Store
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         run: |
           set -euo pipefail
           xcodebuild -exportArchive \
@@ -126,6 +170,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_API_ISSUER_ID"
 
       - name: Locate exported package
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         id: pkg
         run: |
           set -euo pipefail
@@ -135,6 +180,7 @@ jobs:
           echo "exported: $pkg"
 
       - name: Validate with App Store Connect
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         env:
           # Passed via env, not inline ${{ }} interpolation, so the shell never
           # re-parses the value (github-actions/security-guides: script injection).
@@ -146,7 +192,7 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
 
       - name: Upload to App Store Connect
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload }}
+        if: ${{ steps.preflight.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.upload }}
         env:
           PKG_PATH: ${{ steps.pkg.outputs.path }}
         run: |
@@ -156,6 +202,7 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
 
       - name: Upload export as build artifact
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: VaultGuard-appstore-export

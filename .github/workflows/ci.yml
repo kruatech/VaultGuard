@@ -151,6 +151,16 @@ jobs:
             echo "::error::literal localization key — add a constant to L10n instead"; exit 1
           fi
 
+      # An unresolved merge reached main once: README.md went out with `<<<<<<<` markers after a
+      # rebase whose conflict was never really resolved. GitHub renders the `=======` line as a
+      # heading underline, so the damage is easy to miss on the page. Only the opening and
+      # closing markers are matched — a line of `=` alone is ordinary Markdown.
+      - name: No unresolved merge-conflict markers
+        run: |
+          if git grep -nE '^(<<<<<<<|>>>>>>>)( |$)'; then
+            echo "::error::merge-conflict markers committed — resolve the conflict"; exit 1
+          fi
+
       - name: No committed .DS_Store
         run: |
           if git ls-files | grep -E '(^|/)\.DS_Store$'; then

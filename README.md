@@ -18,7 +18,6 @@ The developer operates no hosted service and receives no vault content. Secrets 
 
 ## Download
 
-<<<<<<< HEAD
 **VaultGuard Secure** is available on the App Store for supported Apple platforms:
 
 **[Download VaultGuard Secure on the App Store](https://apps.apple.com/kz/app/vaultguard-secure/id6784213427)**
@@ -29,15 +28,6 @@ Supported platforms:
 * iOS
 * iPadOS
 * watchOS
-=======
-VaultGuard is in active development (**beta**). The core flows — choosing a vault
-type, opening a local KDBX file or signing in to a self-hosted server, unlock/lock,
-browse, search, item details, copy, password generator, TOTP, and AutoFill — are
-implemented, and the security-sensitive paths are covered by unit tests, with
-acceptance tests for the KeePass write path. Expect
-rough edges; it is not yet recommended as your only password manager. See
-**Feature status** and **Known limitations**.
->>>>>>> e6f84f1 (Release 2.1.0)
 
 ## Supported vault types
 
@@ -46,7 +36,6 @@ rough edges; it is not yet recommended as your only password manager. See
 
 ## Features
 
-<<<<<<< HEAD
 * View and manage logins, cards, identities, and secure notes.
 * Organize vault items with folders, favorites, and trash.
 * Built-in password generator with reusable templates.
@@ -56,33 +45,15 @@ rough edges; it is not yet recommended as your only password manager. See
 * Biometric unlock without storing the master password.
 * Encrypted offline cache for fast startup and read access in server mode.
 * **Send** — share encrypted text or files via a link in server mode.
-* Import from Bitwarden JSON / CSV and export to KeePass.
+* Import from Bitwarden JSON / CSV and 1Password (`.1pux`); export to KeePass and to Bitwarden JSON.
+* Password health report — reused, weak, empty, and long-unchanged passwords, checked on the device.
+* Search that matches Cyrillic and Latin spellings of the same name, and text typed on the wrong keyboard layout.
+* Multiple selection with bulk move, favorite, and delete; a recently used list.
+* Adjustable text size on macOS (⌘+ / ⌘− / ⌘0).
 * TLS certificate fingerprint pinning with explicit confirmation for self-signed servers.
 * Multi-account and multi-vault support with per-source isolation.
 * English and Russian localization.
 * Native support across macOS, iOS, iPadOS, and watchOS.
-=======
-- View and manage logins, cards, identities, and secure notes; organize with
-  folders, favorites, and trash.
-- Built-in password generator with reusable templates, and TOTP code generation.
-- AutoFill credential provider extension for Safari and other apps.
-- Search, item details, and one-tap copy of username/password.
-- Biometric unlock (Touch ID) without ever storing the master password.
-- Encrypted offline cache for fast startup and read access (server mode).
-- **Send** — share encrypted text or files via a link (server mode).
-- Import from Bitwarden JSON / CSV and 1Password (`.1pux`); export to KeePass and to
-  Bitwarden JSON.
-- Password health report — reused, weak, empty and long-unchanged passwords, checked
-  on the device.
-- Search that finds Cyrillic and Latin spellings of the same name, and text typed on the
-  wrong keyboard layout.
-- Multiple selection with bulk move, favourite and delete; a recently used list.
-- Adjustable text size (⌘+ / ⌘− / ⌘0) — macOS has no system-wide Dynamic Type.
-- TLS certificate fingerprint pinning with explicit confirmation for self-signed
-  servers (server mode).
-- Multi-account / multi-vault support with per-source isolation.
-- English and Russian localization.
->>>>>>> e6f84f1 (Release 2.1.0)
 
 ## Feature status
 
@@ -95,11 +66,13 @@ rough edges; it is not yet recommended as your only password manager. See
 * Biometric unlock.
 * Lock, logout, account removal, and local-vault cleanup.
 
-**Known limitations**
+**In progress / limitations**
 
-<<<<<<< HEAD
 * **Passkeys / FIDO2** are implemented and wired into AutoFill (registration + assertion), with private keys stored behind a user-presence access control. One cross-process read path is pending on-device confirmation (see [docs/release-smoke-checklist.md](docs/release-smoke-checklist.md)); until confirmed, treat passkeys as preview.
 * KeePass (`.kdbx`) is read-write, but some advanced KDBX features may not be preserved on save.
+* Saving a KDBX 3.1 file writes it as KDBX 4.1, which needs KeePass 2.48 or later, or KeePassXC 2.7 or later, to open. The app says so the first time it happens in a session.
+* KeePass pre-save snapshots stay in the app's container after a local vault is closed or removed. Delete them in Settings — in particular after changing a master password, since each snapshot still opens with the password the file had when it was taken.
+* On macOS, nothing on screen is protected from screen recording or screen sharing: macOS no longer offers apps a way to exclude a window from capture. Revealed passwords are masked again after 30 seconds.
 * No independent security audit has been performed.
 * Manual light/dark/high-contrast visual QA is ongoing.
 
@@ -110,74 +83,7 @@ rough edges; it is not yet recommended as your only password manager. See
 * **Biometric unlock** stores wrapped key material behind platform authentication controls; the raw master password is never stored.
 * **AutoFill** serves credentials from a separate, minimal cache sealed under a key derived from a short-lived shared secret. The extension never receives the real vault key or server token. Lock, logout, account removal, local-vault close, and TTL expiry revoke access.
 * **Passkeys** private keys are stored behind a user-presence access control and are deleted on logout, account removal, or local-vault removal.
-* **Transport security** in server mode uses normal system certificate validation. Self-signed certificates require explicit SHA-256 fingerprint confirmation (trust-on-first-use), and subsequent certificate changes are flagged.
-=======
-- **Passkeys / FIDO2** are implemented and wired into AutoFill (registration +
-  assertion), with private keys stored behind a user-presence access control. One
-  cross-process read path is pending on-device confirmation
-  (see [docs/release-smoke-checklist.md](docs/release-smoke-checklist.md)); until
-  confirmed, treat passkeys as preview.
-- KeePass (`.kdbx`) is read-write, but some advanced KDBX features may not be
-  preserved on save.
-- Saving a KDBX 3.1 file writes it as KDBX 4.1, which needs KeePass 2.48 or later, or
-  KeePassXC 2.7 or later, to open. The app says so the first time it happens in a
-  session.
-- KeePass pre-save snapshots stay in the app's container after a local vault is closed
-  or removed. Delete them in Settings — in particular after changing a master password,
-  since each snapshot still opens with the password the file had when it was taken.
-- Nothing on screen is protected from screen recording or screen sharing: macOS no longer
-  offers apps a way to exclude a window from capture. Revealed passwords are masked again
-  after 30 seconds.
-- No independent security audit has been performed.
-- Builds are not yet signed or notarized for distribution — build from source.
-- Manual light/dark/high-contrast visual QA is ongoing.
-
-## Screenshots
-
-<table>
-  <tr>
-    <td><img src="docs/assets/vault-type.png" alt="Vault type selection" width="420"></td>
-    <td><img src="docs/assets/keepass-unlock.png" alt="Local KeePass unlock" width="420"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/assets/item-detail.png" alt="Item detail" width="420"></td>
-    <td><img src="docs/assets/password-generator.png" alt="Password generator" width="420"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/assets/server-login.png" alt="Self-hosted server login" width="420"></td>
-    <td><img src="docs/assets/settings.png" alt="Settings" width="420"></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="docs/assets/demo.gif" alt="VaultGuard demo" width="720">
-</p>
-
-## Security model
-
-- **Master password is never written to disk.** Server login derives the vault key
-  (Argon2id or PBKDF2, matching the server's KDF); a local KDBX file is opened with
-  the KeePass KDF (Argon2 / AES-KDF). Only derived/wrapped material is kept in
-  memory for the session.
-- **Two Keychain access groups.** Session secrets (tokens, wrapped user key, KDF
-  params, offline-cache key, account index, KeePass bookmarks) live in an
-  app-private group the AutoFill extension is **not** entitled to; only minimal
-  AutoFill state lives in a shared group.
-- **Biometric unlock** stores the wrapped vault key and a password hash in the
-  data-protection Keychain behind a `SecAccessControl` bound to the current
-  biometric set; the raw master password is never stored.
-- **AutoFill** serves credentials from a separate, minimal cache sealed under a key
-  derived from a short-lived shared secret (configurable TTL). The extension never
-  receives the real vault key or any token. Lock / logout / account removal / local
-  vault close / TTL expiry all revoke access.
-- **Passkeys** private keys are stored behind a user-presence access control and are
-  deleted on logout / account removal / local-vault removal.
-- **Transport** (server mode). System-trusted certificates are validated normally;
-  self-signed certificates require explicit SHA-256 fingerprint confirmation
-  (trust-on-first-use), and a later change is flagged. Plain HTTP is permitted only on
-  the local network, for self-hosted servers without TLS, and the sign-in screen warns
-  when it is used.
->>>>>>> e6f84f1 (Release 2.1.0)
+* **Transport security** in server mode uses normal system certificate validation. Self-signed certificates require explicit SHA-256 fingerprint confirmation (trust-on-first-use), and subsequent certificate changes are flagged. Plain HTTP is permitted only on the local network, for self-hosted servers without TLS, and the sign-in screen warns when it is used.
 
 See [docs/security-model.md](docs/security-model.md) for the full security model.
 
@@ -205,20 +111,9 @@ xcodegen generate
 open VaultGuard.xcodeproj
 ```
 
-<<<<<<< HEAD
-Swift package dependencies are pinned by the Xcode project and `Package.resolved`.
+The build fetches nothing from the network. The one third-party component — the Argon2 reference implementation used for key derivation — is vendored in `Packages/Argon2` at a pinned upstream commit; `Packages/Argon2/PROVENANCE.md` records the commit, and CI checks every file against `SHA256SUMS`. It replaced the `Argon2Swift` package, which pulled the same library in through a floating branch and a git submodule that broke fresh clones.
 
-`Argon2Swift` is pinned by audited revision because its published package manifest uses a branch-based transitive dependency; Xcode resolves it automatically.
-=======
-The build fetches nothing from the network. The one third-party component — the Argon2
-reference implementation used for key derivation — is vendored in `Packages/Argon2` at a
-pinned upstream commit; `Packages/Argon2/PROVENANCE.md` records the commit and CI checks
-every file against `SHA256SUMS`. It replaced the `Argon2Swift` package, which pulled the
-same library in through a floating branch and a git submodule that broke fresh clones.
-
-For development details — the test suite, fixtures, and the parts of the code that need
-care — see [docs/development.md](docs/development.md).
->>>>>>> e6f84f1 (Release 2.1.0)
+For development details — the test suite, fixtures, and the parts of the code that need care — see [docs/development.md](docs/development.md).
 
 ### Tests
 
