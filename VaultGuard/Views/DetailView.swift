@@ -7,7 +7,8 @@ struct DetailView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        if let cipher = appState.selectedCipher {
+        if appState.hasMultipleSelection {
+            MultiSelectionView()        } else if let cipher = appState.selectedCipher {
             CipherDetailView(cipher: cipher).id(cipher.id)
         } else {
             VStack(spacing: 10) {
@@ -16,6 +17,55 @@ struct DetailView: View {
                 Text(L10n.Detail.orCreateNew.localized).font(VGFont.body).foregroundColor(VGColor.tertiary)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// Shown in place of an item's details while several rows are selected.
+///
+/// There is no single item to display, and showing the first one would be misleading, so the
+/// pane turns into the actions that make sense over a group. Copying is deliberately absent:
+/// the clipboard holds one value, and reprompt-protected items must not be read in bulk.
+struct MultiSelectionView: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        VStack(spacing: VGSpacing.xl) {
+            Image(systemName: "checklist").font(VGFont.emptyGlyphLarge).foregroundColor(VGColor.quaternary)
+            Text(L10n.Items.bulkSelected.localized(appState.selectedCipherIds.count))
+                .font(VGFont.title2).foregroundColor(VGColor.secondary)
+
+            VStack(spacing: VGSpacing.m) {
+                if appState.activeVaultKind != .keepass {
+                    HStack(spacing: VGSpacing.m) {
+                        Button(L10n.Items.addFavorite.localized) {
+                            Task { await appState.setFavoriteForSelectedCiphers(true) }
+                        }.buttonStyle(.bordered).handCursor()
+                        Button(L10n.Items.removeFavorite.localized) {
+                            Task { await appState.setFavoriteForSelectedCiphers(false) }
+                        }.buttonStyle(.bordered).handCursor()
+                    }
+                }
+                if appState.isPersonalVault && !appState.folders.isEmpty {
+                    Menu(L10n.Items.moveToFolder.localized) {
+                        Button(L10n.noFolder.localized) {
+                            Task { await appState.moveSelectedCiphersToFolder(nil) }
+                        }
+                        Divider()
+                        ForEach(appState.folders) { folder in
+                            Button(folder.name) {
+                                Task { await appState.moveSelectedCiphersToFolder(folder.id) }
+                            }
+                        }
+                    }
+                    .menuStyle(.button).frame(maxWidth: 220).handCursor()
+                }
+                Button(L10n.Items.bulkDelete.localized(appState.selectedCipherIds.count), role: .destructive) {
+                    appState.showBulkDeleteConfirm = true
+                }.buttonStyle(.bordered).handCursor()
+            }
+            .disabled(appState.isBatchRunning)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -41,7 +91,7 @@ struct CipherDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let username = cipher.login?.username, !username.isEmpty {
-                        FieldRow(label: L10n.Detail.username.localized, value: username, mono: true) { appState.copyToClipboard(username) }
+                        FieldRow(label: L10n.Detail.username.localized, value: username, mono: true) { appState.copyToClipboard(username, from: cipher) }
                     }
                     if let password = cipher.login?.password, !password.isEmpty { passwordSection(password) }
                     if let card = cipher.card { cardSection(card) }
@@ -106,7 +156,37 @@ struct CipherDetailView: View {
         .sheet(item: $appState.pendingReprompt) { req in
             RepromptSheet(request: req).environmentObject(appState)
         }
+        // Auto-lock (and any explicit lock) clears the vault, but SwiftUI @State survives it:
+        // a decrypted attachment sitting in `previewData`, and any revealed password, would
+        // stay in memory and on screen behind the lock screen. Drop them the moment the vault
+        // locks.
+        .onChange(of: appState.isUnlocked) { _, unlocked in
+            guard !unlocked else { return }
+            previewingAttachment = nil
+            previewData = nil
+            loadingAttachmentId = nil
+            showPassword = false
+            showSecretFields = []
+        }
+        // A revealed secret hides itself again. The realistic way a password leaks from this
+        // screen is being left on display — during a screen share, a recording, or to someone
+        // walking past — and macOS no longer offers a way to keep a window out of screen
+        // capture, so shortening the exposure is the defence available. `.task(id:)` cancels
+        // and restarts on every change, so hiding and re-revealing resets the clock.
+        .task(id: showPassword) {
+            guard showPassword else { return }
+            try? await Task.sleep(for: .seconds(Self.revealSeconds))
+            if !Task.isCancelled { showPassword = false }
+        }
+        .task(id: showSecretFields) {
+            guard !showSecretFields.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(Self.revealSeconds))
+            if !Task.isCancelled { showSecretFields = [] }
+        }
     }
+
+    /// How long a revealed password or hidden field stays readable before it is masked again.
+    static let revealSeconds: Double = 30
 
     // MARK: - File Drop Zone
 
@@ -219,8 +299,8 @@ struct CipherDetailView: View {
                 Text(showPassword ? password : "••••••••••••••••").font(VGFont.bodyMono)
                     .foregroundColor(showPassword ? .primary : .secondary).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: { appState.guardReprompt(cipher) { showPassword.toggle() } }) { Image(systemName: showPassword ? "eye.slash" : "eye").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help((showPassword ? L10n.Editor.hide : L10n.Editor.show).localized)
-                Button(action: { appState.guardReprompt(cipher) { appState.copyToClipboard(password) } }) { Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+                Button(action: { appState.guardReprompt(cipher) { showPassword.toggle() } }) { Image(systemName: showPassword ? "eye.slash" : "eye").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().vgHelp((showPassword ? L10n.Editor.hide : L10n.Editor.show).localized)
+                Button(action: { appState.guardReprompt(cipher) { appState.copyToClipboard(password, from: cipher) } }) { Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().vgHelp(L10n.copy.localized)
             }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
 
             let strength = PasswordStrength.evaluate(password)
@@ -244,11 +324,11 @@ struct CipherDetailView: View {
 
     private func cardSection(_ card: CipherCard) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let name = card.cardholderName, !name.isEmpty { FieldRow(label: L10n.Detail.cardHolder.localized, value: name) { appState.copyToClipboard(name) } }
-            if let number = card.number, !number.isEmpty { FieldRow(label: L10n.Detail.cardNumber.localized, value: number, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(number) } } }
+            if let name = card.cardholderName, !name.isEmpty { FieldRow(label: L10n.Detail.cardHolder.localized, value: name) { appState.copyToClipboard(name, from: cipher) } }
+            if let number = card.number, !number.isEmpty { FieldRow(label: L10n.Detail.cardNumber.localized, value: number, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(number, from: cipher) } } }
             HStack(spacing: 16) {
-                if let m = card.expMonth, let y = card.expYear { FieldRow(label: L10n.Detail.cardExpiry.localized, value: "\(m)/\(y)", mono: true) { appState.copyToClipboard("\(m)/\(y)") } }
-                if let code = card.code, !code.isEmpty { FieldRow(label: L10n.Detail.cardCvv.localized, value: "•••", mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(code) } } }
+                if let m = card.expMonth, let y = card.expYear { FieldRow(label: L10n.Detail.cardExpiry.localized, value: "\(m)/\(y)", mono: true) { appState.copyToClipboard("\(m)/\(y)", from: cipher) } }
+                if let code = card.code, !code.isEmpty { FieldRow(label: L10n.Detail.cardCvv.localized, value: "•••", mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(code, from: cipher) } } }
             }
         }
     }
@@ -257,25 +337,25 @@ struct CipherDetailView: View {
 
     private func identitySection(_ identity: CipherIdentity) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !identity.fullName.isEmpty { FieldRow(label: L10n.Identity.fullName.localized, value: identity.fullName) { appState.copyToClipboard(identity.fullName) } }
-            if let company = identity.company, !company.isEmpty { FieldRow(label: L10n.Identity.company.localized, value: company) { appState.copyToClipboard(company) } }
-            if let email = identity.email, !email.isEmpty { FieldRow(label: L10n.Identity.email.localized, value: email) { appState.copyToClipboard(email) } }
-            if let phone = identity.phone, !phone.isEmpty { FieldRow(label: L10n.Identity.phone.localized, value: phone) { appState.copyToClipboard(phone) } }
-            if let username = identity.username, !username.isEmpty { FieldRow(label: L10n.Identity.username.localized, value: username, mono: true) { appState.copyToClipboard(username) } }
+            if !identity.fullName.isEmpty { FieldRow(label: L10n.Identity.fullName.localized, value: identity.fullName) { appState.copyToClipboard(identity.fullName, from: cipher) } }
+            if let company = identity.company, !company.isEmpty { FieldRow(label: L10n.Identity.company.localized, value: company) { appState.copyToClipboard(company, from: cipher) } }
+            if let email = identity.email, !email.isEmpty { FieldRow(label: L10n.Identity.email.localized, value: email) { appState.copyToClipboard(email, from: cipher) } }
+            if let phone = identity.phone, !phone.isEmpty { FieldRow(label: L10n.Identity.phone.localized, value: phone) { appState.copyToClipboard(phone, from: cipher) } }
+            if let username = identity.username, !username.isEmpty { FieldRow(label: L10n.Identity.username.localized, value: username, mono: true) { appState.copyToClipboard(username, from: cipher) } }
             if !identity.fullAddress.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     SectionLabel(L10n.Identity.address1.localized)
                     HStack(spacing: 8) {
                         Text(identity.fullAddress).font(VGFont.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                        Button(action: { appState.copyToClipboard(identity.fullAddress) }) {
+                        Button(action: { appState.copyToClipboard(identity.fullAddress, from: cipher) }) {
                             Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary)
-                        }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+                        }.buttonStyle(.plain).handCursor().vgHelp(L10n.copy.localized)
                     }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
                 }
             }
-            if let ssn = identity.ssn, !ssn.isEmpty { FieldRow(label: L10n.Identity.ssn.localized, value: ssn, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(ssn) } } }
-            if let passport = identity.passportNumber, !passport.isEmpty { FieldRow(label: L10n.Identity.passport.localized, value: passport, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(passport) } } }
-            if let license = identity.licenseNumber, !license.isEmpty { FieldRow(label: L10n.Identity.license.localized, value: license, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(license) } } }
+            if let ssn = identity.ssn, !ssn.isEmpty { FieldRow(label: L10n.Identity.ssn.localized, value: ssn, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(ssn, from: cipher) } } }
+            if let passport = identity.passportNumber, !passport.isEmpty { FieldRow(label: L10n.Identity.passport.localized, value: passport, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(passport, from: cipher) } } }
+            if let license = identity.licenseNumber, !license.isEmpty { FieldRow(label: L10n.Identity.license.localized, value: license, mono: true) { appState.guardReprompt(cipher) { appState.copyToClipboard(license, from: cipher) } } }
         }
     }
 
@@ -288,10 +368,10 @@ struct CipherDetailView: View {
                 Text(url).font(VGFont.body).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                 Button(action: { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }) {
                     Image(systemName: "arrow.up.right.square").font(VGFont.body).foregroundColor(VGColor.secondary)
-                }.buttonStyle(.plain).handCursor().help(L10n.Items.openUrl.localized)
-                Button(action: { appState.copyToClipboard(url) }) {
+                }.buttonStyle(.plain).handCursor().vgHelp(L10n.Items.openUrl.localized)
+                Button(action: { appState.copyToClipboard(url, from: cipher) }) {
                     Image(systemName: "doc.on.doc").font(VGFont.body).foregroundColor(VGColor.secondary)
-                }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
+                }.buttonStyle(.plain).handCursor().vgHelp(L10n.copy.localized)
             }.padding(10).background(VGColor.surface).cornerRadius(VGRadius.medium)
         }
     }
@@ -319,7 +399,7 @@ struct CipherDetailView: View {
         HStack(spacing: 8) {
             Text(field.name.uppercased()).font(VGFont.caption2Emphasis).foregroundColor(VGColor.tertiary).frame(minWidth: 60, alignment: .leading)
             if field.type == .boolean {
-                Text(field.value == "true" ? "misc.yes".localized : "misc.no".localized).font(VGFont.labelEmphasis).foregroundColor(field.value == "true" ? VGColor.success : VGColor.secondary)
+                Text(field.value == "true" ? L10n.Misc.yes.localized : L10n.Misc.no.localized).font(VGFont.labelEmphasis).foregroundColor(field.value == "true" ? VGColor.success : VGColor.secondary)
             } else if field.type == .hidden {
                 let isVisible = showSecretFields.contains(field.id.uuidString)
                 Text(isVisible ? field.value : "••••••••").font(VGFont.labelMono).foregroundColor(isVisible ? .primary : .secondary)
@@ -331,8 +411,8 @@ struct CipherDetailView: View {
             }
             Spacer()
             Button(action: {
-                if field.type == .hidden { appState.guardReprompt(cipher) { appState.copyToClipboard(field.value) } }
-                else { appState.copyToClipboard(field.value) }
+                if field.type == .hidden { appState.guardReprompt(cipher) { appState.copyToClipboard(field.value, from: cipher) } }
+                else { appState.copyToClipboard(field.value, from: cipher) }
             }) {
                 Image(systemName: "doc.on.doc").font(VGFont.caption).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).handCursor().help(L10n.copy.localized)
@@ -385,7 +465,7 @@ struct CipherDetailView: View {
                 }
                 Button(action: { appState.guardReprompt(cipher) { Task { await appState.downloadAttachment(cipher: cipher, attachment: att) } } }) { Image(systemName: "arrow.down.circle").font(VGFont.body).foregroundColor(VGColor.secondary) }.buttonStyle(.plain).handCursor().help(L10n.download.localized)
                 Button(action: { attachmentToDelete = att }) { Image(systemName: "trash").font(VGFont.body).foregroundColor(VGColor.danger) }.buttonStyle(.plain).handCursor()
-                    .help(L10n.delete.localized)
+                    .vgHelp(L10n.delete.localized)
             }
         }.padding(8).background(VGColor.surface).cornerRadius(VGRadius.small)
     }
@@ -399,7 +479,7 @@ struct CipherDetailView: View {
 
     private func attachmentLabel(_ att: CipherAttachment) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(att.fileName ?? "misc.attachment".localized).font(VGFont.labelMedium).foregroundColor(VGColor.primary).lineLimit(1)
+            Text(att.fileName ?? L10n.Misc.attachment.localized).font(VGFont.labelMedium).foregroundColor(VGColor.primary).lineLimit(1)
             Text(att.sizeName ?? "").font(VGFont.caption2).foregroundColor(VGColor.secondary)
         }
     }
@@ -426,6 +506,15 @@ struct CipherDetailView: View {
             MetaItem(label: L10n.Detail.created.localized, value: cipher.creationDate?.displayString ?? "—")
             MetaItem(label: L10n.Detail.modified.localized, value: cipher.revisionDate?.displayString ?? "—")
             if cipher.login?.password != nil { MetaItem(label: L10n.Detail.passwordAge.localized, value: cipher.revisionDate?.daysAgoString ?? "—") }
+            // KeePass-only: an entry can carry an expiry date, and an expired one is easy to
+            // miss when nothing on screen mentions it.
+            if let expiry = cipher.keepassExpiry {
+                MetaItem(label: cipher.isExpired ? L10n.Detail.expired.localized : L10n.Detail.expires.localized,
+                         value: expiry.displayString)
+            }
+            if let tags = cipher.keepassTags, !tags.isEmpty {
+                MetaItem(label: L10n.Detail.tags.localized, value: tags.joined(separator: ", "))
+            }
         }.padding(.top, 12)
     }
 }
@@ -439,7 +528,7 @@ struct AttachmentPreviewSheet: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(attachment.fileName ?? "misc.attachment".localized).font(VGFont.title3Bold).lineLimit(1)
+                    Text(attachment.fileName ?? L10n.Misc.attachment.localized).font(VGFont.title3Bold).lineLimit(1)
                     if let size = attachment.sizeName { Text(size).font(VGFont.caption).foregroundColor(VGColor.secondary) }
                 }
                 Spacer()
@@ -453,7 +542,7 @@ struct AttachmentPreviewSheet: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(VGColor.surface)
                     } else {
-                        Text("misc.cannotOpenFile".localized).foregroundColor(VGColor.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Text(L10n.Misc.cannotOpenFile.localized).foregroundColor(VGColor.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(VGColor.surface)
                     }
                 } else if AppState.isPDF(fileName: attachment.fileName) {
@@ -463,7 +552,7 @@ struct AttachmentPreviewSheet: View {
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "doc.questionmark").font(VGFont.emptyGlyphLarge).foregroundColor(VGColor.secondary)
-                        Text("misc.previewUnavailable".localized).font(VGFont.bodyLarge).foregroundColor(VGColor.secondary)
+                        Text(L10n.Misc.previewUnavailable.localized).font(VGFont.bodyLarge).foregroundColor(VGColor.secondary)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else { ProgressView(L10n.loading.localized).frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -574,7 +663,7 @@ struct TOTPSectionView: View {
             }.padding(12).background(totpColor.opacity(0.06)).cornerRadius(VGRadius.large)
             .overlay(RoundedRectangle(cornerRadius: VGRadius.large).stroke(totpColor.opacity(0.1), lineWidth: 1))
             .contentShape(Rectangle())
-            .onTapGesture { appState.guardReprompt(cipher) { revealed = true; appState.copyToClipboard(code.replacingOccurrences(of: " ", with: "")) } }
+            .onTapGesture { appState.guardReprompt(cipher) { revealed = true; appState.copyToClipboard(code.replacingOccurrences(of: " ", with: ""), from: cipher) } }
             .handCursor()
         }
         .onAppear { period = totp.period(for: secret); update() }.onReceive(timer) { _ in update() }
@@ -632,6 +721,7 @@ struct RepromptSheet: View {
     let request: RepromptRequest
     @State private var password = ""
     @State private var error = false
+    @State private var verifying = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -650,9 +740,10 @@ struct RepromptSheet: View {
             HStack {
                 Spacer()
                 Button(L10n.cancel.localized) { appState.cancelReprompt() }.keyboardShortcut(.escape).handCursor()
+                if verifying { ProgressView().controlSize(.small) }
                 Button(L10n.Reprompt.verify.localized, action: verify)
                     .buttonStyle(.borderedProminent)
-                    .disabled(password.isEmpty)
+                    .disabled(password.isEmpty || verifying)
                     .handCursor()
             }
         }
@@ -661,6 +752,14 @@ struct RepromptSheet: View {
     }
 
     private func verify() {
-        if !appState.submitReprompt(password) { error = true; password = "" }
+        // The KDF takes long enough that a second Return would start a second derivation.
+        guard !verifying, !password.isEmpty else { return }
+        verifying = true
+        let attempt = password
+        Task {
+            let ok = await appState.submitReprompt(attempt)
+            verifying = false
+            if !ok { error = true; password = "" }
+        }
     }
 }

@@ -15,6 +15,9 @@ actor APIService {
     private var refreshToken: String?
     private var tokenExpiry: Date?
 
+    /// The refresh currently in flight, if any. See `ensureValidToken`.
+    private var refreshInFlight: Task<TokenResponse, Error>?
+
     private var session: URLSession
     private let decoder: JSONDecoder
 
@@ -61,24 +64,15 @@ actor APIService {
         }
     }
 
-    /// Map a normalized server URL to its API and identity base URLs.
-    /// Known Bitwarden cloud hosts use dedicated subdomains; everything else (self-hosted
-    /// Bitwarden / Vaultwarden) is served under one host at `/api` and `/identity`.
-    static func resolveEndpoints(for serverURL: String) -> (api: String, identity: String) {
-        let host = (URL(string: serverURL)?.host
-            ?? serverURL.replacingOccurrences(of: "https://", with: "")
-                        .replacingOccurrences(of: "http://", with: "")
-                        .components(separatedBy: "/").first
-            ?? "").lowercased()
+    /// Cloud-region table; the definition lives in `BitwardenEndpoints`.
+    static var knownCloudHosts: [String: (api: String, identity: String)] {
+        BitwardenEndpoints.knownCloudHosts
+    }
 
-        switch host {
-        case "bitwarden.com", "www.bitwarden.com", "vault.bitwarden.com":
-            return ("https://api.bitwarden.com", "https://identity.bitwarden.com")
-        case "bitwarden.eu", "www.bitwarden.eu", "vault.bitwarden.eu":
-            return ("https://api.bitwarden.eu", "https://identity.bitwarden.eu")
-        default:
-            return ("\(serverURL)/api", "\(serverURL)/identity")
-        }
+    /// Map a normalized server URL to its API and identity base URLs.
+    /// See `BitwardenEndpoints` — kept here as the name every call site already uses.
+    static func resolveEndpoints(for serverURL: String) -> (api: String, identity: String) {
+        BitwardenEndpoints.resolve(for: serverURL)
     }
 
     func setTokens(access: String, refresh: String?, expiresIn: Int) {
@@ -154,7 +148,17 @@ actor APIService {
         return try await postForm("\(identityBaseURL)/connect/token", params: params)
     }
 
+    /// Public entry point. Goes through the same single-flight guard as the automatic
+    /// refresh, so an explicit call cannot race one that is already running.
     func refreshAccessToken() async throws -> TokenResponse {
+        if let existing = refreshInFlight { return try await existing.value }
+        let task = Task { try await self.performRefresh() }
+        refreshInFlight = task
+        defer { refreshInFlight = nil }
+        return try await task.value
+    }
+
+    private func performRefresh() async throws -> TokenResponse {
         guard let rt = refreshToken else { throw APIError.noRefreshToken }
         let params = [
             "grant_type": "refresh_token",
@@ -327,8 +331,18 @@ actor APIService {
     }
 
     /// Update an existing Send (edit fields, enable/disable). Type cannot change.
+    ///
+    /// Note: a nil `password` in the body does NOT clear an existing one. The server only
+    /// touches the password when the field is present, so clearing it needs the dedicated
+    /// endpoint below.
     func updateSend(id: String, _ body: SendRequest) async throws -> SendResponse {
         return try await putJSON("\(apiBaseURL)/sends/\(id)", body: body)
+    }
+
+    /// Remove the access password from a Send. Bodyless `PUT /sends/{id}/remove-password`;
+    /// the server responds with the updated Send.
+    func removeSendPassword(id: String) async throws -> SendResponse {
+        return try await putNoBody("\(apiBaseURL)/sends/\(id)/remove-password")
     }
 
     /// Step 1 of a file Send: create the Send + get upload target.
@@ -368,10 +382,28 @@ actor APIService {
 
     // MARK: - Private Helpers
 
+    /// Refresh the access token if it is about to expire, at most once at a time.
+    ///
+    /// An actor serializes access to its state but does not hold it across a suspension. Two
+    /// requests arriving together both saw the token as expired, both suspended inside the
+    /// refresh, and both sent one — with the same refresh token. Where the identity server
+    /// rotates refresh tokens, the second request presents one that has just been consumed,
+    /// the refresh fails, and the user is signed out in the middle of a session for no reason
+    /// they can see.
+    ///
+    /// Storing the in-flight task makes the second caller await the first one's result instead
+    /// of starting its own.
     private func ensureValidToken() async throws {
-        if let expiry = tokenExpiry, Date() > expiry.addingTimeInterval(-60) {
-            _ = try await refreshAccessToken()
+        guard let expiry = tokenExpiry, Date() > expiry.addingTimeInterval(-60) else { return }
+
+        if let existing = refreshInFlight {
+            _ = try await existing.value
+            return
         }
+        let task = Task { try await self.performRefresh() }
+        refreshInFlight = task
+        defer { refreshInFlight = nil }
+        _ = try await task.value
     }
 
     private func get<T: Decodable>(_ url: String) async throws -> T {
@@ -461,6 +493,19 @@ actor APIService {
         try await ensureValidToken()
         if let token = accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await session.data(for: request)
+        try validateResponse(response, data: data)
+        return try decoder.decode(T.self, from: data)
+    }
+
+    /// PUT with no request body, decoding the response. Used by endpoints that act on the
+    /// resource identified by the URL alone (Send password removal).
+    private func putNoBody<T: Decodable>(_ url: String) async throws -> T {
+        guard let requestURL = URL(string: url) else { throw APIError.invalidURL }
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "PUT"
+        try await ensureValidToken()
+        if let token = accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let (data, response) = try await session.data(for: request)
         try validateResponse(response, data: data)
         return try decoder.decode(T.self, from: data)

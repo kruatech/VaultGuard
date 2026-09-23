@@ -9,7 +9,9 @@ struct MainView: View {
             SidebarView()
         } detail: {
             VStack(spacing: 0) {
+                appGroupBanner
                 unifiedHeader
+                batchProgressBar
                 Divider()
                 HSplitView {
                     ItemsListView()
@@ -29,6 +31,9 @@ struct MainView: View {
         .sheet(isPresented: $appState.showSends) {
             SendsView().environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showPasswordHealth) {
+            PasswordHealthView().environmentObject(appState)
+        }
         .confirmationDialog(
             L10n.DeleteConfirm.title.localized(appState.deletingCipher?.name ?? ""),
             isPresented: $appState.showDeleteConfirm, titleVisibility: .visible
@@ -38,13 +43,69 @@ struct MainView: View {
             }
             Button(L10n.cancel.localized, role: .cancel) {}
         } message: { Text(L10n.DeleteConfirm.message.localized) }
+        // Separate from the single-item dialog: the message has to say how many items are
+        // about to go, and a bulk delete is the one place where a mis-click is expensive.
+        .confirmationDialog(
+            L10n.Items.bulkDeleteConfirm.localized(appState.selectedCipherIds.count),
+            isPresented: $appState.showBulkDeleteConfirm, titleVisibility: .visible
+        ) {
+            Button(L10n.Items.bulkDelete.localized(appState.selectedCipherIds.count), role: .destructive) {
+                Task { await appState.deleteSelectedCiphers() }
+            }
+            Button(L10n.cancel.localized, role: .cancel) {}
+        } message: { Text(L10n.DeleteConfirm.message.localized) }
         .overlay(alignment: .bottomTrailing) { toastOverlay }
         .onReceive(NotificationCenter.default.publisher(for: .newItem)) { _ in
             appState.startNewItem()
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in searchFocused = true }
+        .onReceive(NotificationCenter.default.publisher(for: .lockVault)) { _ in appState.lock() }
+        .onReceive(NotificationCenter.default.publisher(for: .showGenerator)) { _ in
+            appState.showGenerator = true
+        }
+        // `refresh()` already reports success and failure through a toast, and is a no-op-ish
+        // re-read for KeePass vaults, so ⌘R is safe from either vault kind.
+        .onReceive(NotificationCenter.default.publisher(for: .syncVault)) { _ in
+            Task { await appState.refresh() }
+        }
         // Keyboard shortcuts
         .background(KeyboardShortcutView(appState: appState))
+    }
+
+    /// Per-item progress for a bulk action. Each item is a separate network round trip, so
+    /// without this a fifty-item delete looks like the window has hung.
+    @ViewBuilder
+    private var batchProgressBar: some View {
+        if appState.isBatchRunning {
+            HStack(spacing: VGSpacing.m) {
+                ProgressView(value: appState.batchProgress).frame(maxWidth: 200)
+                Text("\(appState.batchDone) / \(appState.batchTotal)")
+                    .font(VGFont.caption).foregroundColor(VGColor.secondary)
+                    .accessibilityValue(Text("\(appState.batchDone) / \(appState.batchTotal)"))
+                Spacer()
+            }
+            .padding(.horizontal, VGSpacing.l)
+            .padding(.vertical, VGSpacing.s)
+            .background(VGColor.surface)
+        }
+    }
+
+    /// Shown when the shared App Group container is unreachable — usually a provisioning
+    /// mismatch between the app and the extension. Without it the only symptom is that
+    /// AutoFill silently never has any credentials, with nothing on screen to explain why.
+    @ViewBuilder
+    private var appGroupBanner: some View {
+        if !SharedConfig.isAppGroupAvailable {
+            HStack(spacing: VGSpacing.s) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                Text(L10n.Account.appGroupUnavailable.localized)
+                    .font(VGFont.label).foregroundColor(VGColor.primary)
+                Spacer()
+            }
+            .padding(.horizontal, VGSpacing.l)
+            .padding(.vertical, VGSpacing.s)
+            .background(Color.orange.opacity(0.12))
+        }
     }
 
     // MARK: - Unified header (spans list + detail)
@@ -63,10 +124,13 @@ struct MainView: View {
                 Image(systemName: "magnifyingglass").foregroundColor(VGColor.secondary).font(VGFont.label)
                 TextField("\(L10n.search.localized)…", text: $appState.searchText)
                     .textFieldStyle(.plain).font(VGFont.body).focused($searchFocused)
+                    // Identifiers rather than labels for the elements UI tests drive: a label
+                    // is user-facing text that changes with the language, and a test that
+                    // matches on it passes or fails depending on the locale.
                 if !appState.searchText.isEmpty {
                     Button(action: { appState.searchText = "" }) {
                         Image(systemName: "xmark.circle.fill").foregroundColor(VGColor.secondary).font(VGFont.caption)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).vgHelp(L10n.clear.localized)
                 }
             }
             .padding(.horizontal, VGSpacing.m).frame(height: 28).frame(maxWidth: 320)
@@ -84,6 +148,7 @@ struct MainView: View {
                 Button(action: { Task { await appState.refresh() } }) {
                     Image(systemName: "arrow.clockwise").font(VGFont.label)
                 }.buttonStyle(.bordered).controlSize(.small).handCursor()
+                    .vgHelp(L10n.Sidebar.sync.localized)
             }
         }
         .padding(.horizontal, VGSpacing.xxl).padding(.vertical, VGSpacing.l)

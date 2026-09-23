@@ -1,7 +1,6 @@
 import Foundation
 import CommonCrypto
 import CryptoKit
-import Argon2Swift
 import Security
 
 // MARK: - Encryption Types
@@ -118,10 +117,15 @@ enum KdfType: Int { case pbkdf2 = 0; case argon2id = 1 }
 
 // MARK: - Crypto Service
 
-/// `@unchecked Sendable`: decryption only *reads* key material, and within a sync
-/// the key-setup + decrypt run sequentially inside a single background task, so the
-/// instance is never mutated concurrently. (Avoid calling `clearKeys()`/`setEncryptionKey`
-/// from another thread while a background decrypt is in flight.)
+/// `@unchecked Sendable`: decryption only *reads* key material, and the live instance is
+/// only ever mutated on the main actor during login or unlock, when no decrypt is running.
+///
+/// Locking does not mutate this object. `AppState.wipeCryptoSession()` replaces the instance
+/// instead of calling `clearKeys()` on it, so a decrypt already running on a detached task
+/// keeps the instance it captured and the key material is zeroed by `SecureBytes.deinit` once
+/// that task finishes. That is what removes the clear-vs-decrypt race rather than a rule
+/// about which thread may call what — an earlier version of this comment asked callers to
+/// avoid a hazard the design had already designed out.
 final class CryptoService: @unchecked Sendable {
     // Secure storage for secrets — guaranteed zeroing on clear/dealloc
     private var masterKey: SecureBytes?
@@ -543,13 +547,18 @@ final class CryptoService: @unchecked Sendable {
 
     // MARK: - Low-level Crypto
 
+    /// Bitwarden's Argon2id KDF. Length and version are written out rather than left to
+    /// defaults: `Argon2Swift` supplied 32 bytes and version 1.3 implicitly, and any difference
+    /// here would derive a different key and lock the user out of their vault.
     private func deriveArgon2id(password: Data, salt: Data, iterations: Int, memoryMiB: Int, parallelism: Int) throws -> Data {
-        let saltObj = Salt(bytes: salt)
-        let result = try Argon2Swift.hashPasswordBytes(
-            password: password, salt: saltObj, iterations: iterations,
-            memory: memoryMiB * 1024, parallelism: parallelism, type: .id
-        )
-        return result.hashData()
+        guard iterations > 0, memoryMiB > 0, parallelism > 0,
+              let t = UInt32(exactly: iterations),
+              let m = UInt32(exactly: memoryMiB * 1024),
+              let p = UInt32(exactly: parallelism) else {
+            throw Argon2KDF.KDFError.parameterOutOfRange("iterations \(iterations), memory \(memoryMiB) MiB, parallelism \(parallelism)")
+        }
+        return try Argon2KDF.hash(password: password, salt: salt, iterations: t, memoryKiB: m,
+                                  parallelism: p, length: 32, variant: .id, version: .v13)
     }
 
     private func pbkdf2(password: Data, salt: Data, iterations: Int, keyLength: Int) -> Data {
@@ -637,16 +646,27 @@ final class CryptoService: @unchecked Sendable {
 
     /// Cryptographically secure index in `0..<upperBound` using rejection sampling
     /// to eliminate modulo bias.
+    /// Uniform index below `upperBound`, rejecting the values that would skew the modulus.
+    ///
+    /// Two loops are bounded rather than open. Rejection is expected and cheap — the discarded
+    /// range is under one part in 2^32 divided by `upperBound` — but a `continue` on a failing
+    /// RNG spun forever, turning an unavailable random source into a hang with no error. A
+    /// password generator that cannot get randomness must stop, not freeze the app.
     private static func secureRandomIndex(_ upperBound: Int) -> Int {
         precondition(upperBound > 0)
         let n = UInt32(upperBound)
         let limit = UInt32.max - (UInt32.max % n)
-        while true {
+        var attempts = 0
+        while attempts < 1000 {
+            attempts += 1
             var bytes = [UInt8](repeating: 0, count: 4)
             guard SecRandomCopyBytes(kSecRandomDefault, 4, &bytes) == errSecSuccess else { continue }
             let r = UInt32(bytes[0]) | (UInt32(bytes[1]) << 8) | (UInt32(bytes[2]) << 16) | (UInt32(bytes[3]) << 24)
             if r < limit { return Int(r % n) }
         }
+        // Unreachable short of a broken system RNG. Crashing beats returning a predictable
+        // index and handing the user a password that only looks random.
+        fatalError("secure random source unavailable")
     }
 
     static func generatePassword(length: Int = 20, uppercase: Bool = true, lowercase: Bool = true, digits: Bool = true, symbols: Bool = true, excludeAmbiguous: Bool = false) -> String {

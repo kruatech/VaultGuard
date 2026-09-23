@@ -9,6 +9,10 @@ struct AutoFillRecord: Codable {
     let user: String
     let password: String
     let uris: [String]
+    /// When the source item was last changed. Used to pick the most recently updated entry
+    /// when several share a host and username. Optional so a cache written by an older build
+    /// still decodes (a missing key yields nil rather than failing the whole file).
+    let revisionDate: Date?
 }
 
 /// Per-account AutoFill cache, deliberately separate from the main app's `VaultCache`.

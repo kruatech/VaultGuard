@@ -44,7 +44,7 @@ extension AppState {
         if activeVaultKind == .keepass { await saveKeePassCipher(cipher, isNew: isNew); return }
         do {
             let req = encryptCipherRequest(cipher)
-            let noName = "misc.noName".localized, noOrgKey = "misc.noOrgKey".localized, undecryptable = "misc.undecryptable".localized
+            let noName = L10n.Misc.noName.localized, noOrgKey = L10n.Misc.noOrgKey.localized, undecryptable = L10n.Misc.undecryptable.localized
             if isNew {
                 let r = try await api.createCipher(req)
                 if let d = VaultDecryptor.decryptCipher(r, crypto: crypto, noName: noName, noOrgKey: noOrgKey, undecryptable: undecryptable) { ciphers.append(d); selectedCipherId = d.id }
@@ -94,6 +94,84 @@ extension AppState {
         } catch { ciphers[i].folderId = old; showToast(.error(L10n.error.localized)) }
     }
 
+
+    // MARK: - Bulk actions over the selection
+
+    /// Delete every selected item.
+    ///
+    /// No master-password reprompt here, deliberately: deleting an item reveals nothing about
+    /// it, and single-item delete does not reprompt either. Adding it only for the bulk path
+    /// would be an inconsistency, not extra safety.
+    func deleteSelectedCiphers() async {
+        let targets = selectedCiphers
+        guard !targets.isEmpty else { return }
+        if activeVaultKind == .keepass { await bulkDeleteKeePassCiphers(targets); return }
+
+        beginBatch(total: targets.count)
+        defer { endBatch() }
+        var failed = 0
+        for cipher in targets {
+            defer { advanceBatch() }
+            do {
+                try await api.deleteCipher(id: cipher.id)
+                ciphers.removeAll { $0.id == cipher.id }
+                selectedCipherIds.remove(cipher.id)
+            } catch { failed += 1 }
+        }
+        reportBulkResult(done: targets.count - failed, failed: failed, success: .deleted())
+    }
+
+    /// Move every selected item into `folderId` (nil = out of any folder).
+    func moveSelectedCiphersToFolder(_ folderId: String?) async {
+        let targets = selectedCiphers
+        guard !targets.isEmpty else { return }
+        if activeVaultKind == .keepass { await bulkMoveKeePassCiphers(targets, folderId: folderId); return }
+
+        beginBatch(total: targets.count)
+        defer { endBatch() }
+        var failed = 0
+        for cipher in targets {
+            defer { advanceBatch() }
+            guard let i = ciphers.firstIndex(where: { $0.id == cipher.id }) else { continue }
+            let previous = ciphers[i].folderId
+            ciphers[i].folderId = folderId
+            do { _ = try await api.updateCipher(id: cipher.id, encryptCipherRequest(ciphers[i])) }
+            catch { ciphers[i].folderId = previous; failed += 1 }
+        }
+        reportBulkResult(done: targets.count - failed, failed: failed, success: .info(L10n.moved.localized))
+    }
+
+    /// Set (not toggle) the favourite flag on every selected item. Toggling a mixed selection
+    /// would leave the user unable to predict the outcome.
+    func setFavoriteForSelectedCiphers(_ favorite: Bool) async {
+        guard activeVaultKind != .keepass else {
+            showToast(.info(L10n.keePassReadOnly.localized)); return
+        }
+        let targets = selectedCiphers.filter { $0.favorite != favorite }
+        guard !targets.isEmpty else { return }
+
+        beginBatch(total: targets.count)
+        defer { endBatch() }
+        var failed = 0
+        for cipher in targets {
+            defer { advanceBatch() }
+            guard let i = ciphers.firstIndex(where: { $0.id == cipher.id }) else { continue }
+            ciphers[i].favorite = favorite
+            do { _ = try await api.updateCipher(id: cipher.id, encryptCipherRequest(ciphers[i])) }
+            catch { ciphers[i].favorite = !favorite; failed += 1 }
+        }
+        reportBulkResult(done: targets.count - failed, failed: failed, success: .saved())
+    }
+
+    /// One toast for the whole run. A per-item toast would stack up dozens deep, and a silent
+    /// partial failure would leave the user believing everything went through.
+    private func reportBulkResult(done: Int, failed: Int, success: ToastMessage) {
+        if failed == 0 {
+            showToast(success)
+        } else {
+            showToast(.error(L10n.Items.bulkPartialFailure.localized(done, failed)))
+        }
+    }
 
     // MARK: - Encrypt
 

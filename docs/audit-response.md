@@ -13,18 +13,33 @@ launch. Read it alongside:
 
 - **Single source of truth.** The Xcode project is generated from `project.yml`
   with XcodeGen; the generated `project.pbxproj` and schemes are git-ignored, so
-  there is no committed project file to drift against. `Package.resolved` stays
-  tracked so the dependency pin can be verified.
+  there is no committed project file to drift against. There are no remote Swift
+  packages: the Argon2 implementation is vendored in `Packages/Argon2` (see
+  *Dependencies* below), so there is no `Package.resolved` to track.
 - **CI enforces hygiene** on every push / PR: clean `xcodegen generate` + build +
   tests, localization key parity (en == ru), no force-unwrapped `URL(string:)!`,
   no reintroduced legacy keychain/cache symbols, no misleading master-password
-  copy, the Argon2Swift revision pin, and a guard against unexpected branch-based
-  dependency pins, plus `.DS_Store` / placeholder / positioning checks. A
+  copy, that every vendored Argon2 file matches `Packages/Argon2/SHA256SUMS` and no
+  unlisted file has been added, plus `.DS_Store` / placeholder / positioning checks. A
   tag / `workflow_dispatch` job adds release-readiness checks (README assets,
   version consistency, an unsigned archive smoke).
-- **Dependabot** tracks the `github-actions` ecosystem. The SwiftPM updater is
-  intentionally disabled: the project resolves Swift packages through the Xcode
-  project (`Package.resolved`), not a `Package.swift` manifest.
+- **Dependabot** tracks the `github-actions` ecosystem. Actions are pinned to full
+  commit SHAs with the version in a comment, which Dependabot updates in place. There is
+  nothing for the SwiftPM updater to track.
+
+## Dependencies
+
+The project previously depended on the `Argon2Swift` package for a single function. That
+package declared `phc-winner-argon2` on a floating `master` branch **and** carried it as a
+git submodule; the submodule was never compiled, but SwiftPM cloned it anyway, and that
+clone failed from a fresh checkout, so the project did not build without a warm cache.
+
+The reference implementation is now vendored in `Packages/Argon2` at a pinned upstream
+commit, with the source set upstream's own manifest compiles. Before the switch the same
+files were compiled and checked against upstream's test suite and against vectors produced
+independently with `argon2-cffi`; after it, the existing key-derivation tests and real KDBX
+fixtures pass unchanged, which means vault keys are unchanged.
+`Packages/Argon2/PROVENANCE.md` records the commit, the file list and why each exclusion.
 
 ## Security posture (summary)
 
@@ -56,6 +71,59 @@ app/extension boundary after the user check. Until that is confirmed, passkeys a
 a **preview** feature. The check and its fallback (Secure Enclave, or prompt-level
 user-presence as a documented limitation) are tracked in
 `docs/release-smoke-checklist.md`.
+
+## Changes since the first hardening pass
+
+A second review found and fixed the following. Each fix has tests where the code can be
+reached by the test target.
+
+**Data loss**
+
+- Registering a passkey could silently delete every other passkey for the account: a
+  failed keychain read was treated as "none stored", and the new set was written over the
+  old. Registration now refuses when the existing set cannot be read.
+- The account index, the trusted-certificate map and the password templates had the same
+  read-then-overwrite shape. Each now refuses to write back a set it failed to read.
+- KeePass snapshot rotation kept the last ten snapshots across all vaults, sorted by file
+  name — so saving one vault deleted the *newest* snapshots of any vault whose name
+  sorted earlier. Rotation is now per vault and by time.
+
+**Security**
+
+- A copied password stayed on the pasteboard after the vault locked. Lock now clears it.
+- Items marked for master-password reprompt were offered by AutoFill, which cannot
+  reprompt. They are now excluded, as are URIs whose match rule is *never*.
+- Concurrent requests could each start a token refresh with the same refresh token;
+  where the server rotates refresh tokens, the second one failed and signed the user out.
+  Refreshes are now single-flight.
+- The zip attachment preview could be crashed by an archive with one very deeply nested
+  path, and could be made to misreport a file's extension with a right-to-left override.
+- The secure random index generator spun forever if the system random source failed. It
+  now stops.
+- Old KeePass snapshots could not be deleted, although they remain openable with the
+  password the file had when each was taken. They can now be deleted from Settings.
+- The sign-in screen now warns when a server address uses plain HTTP.
+
+**Responsiveness**
+
+- Every KeePass save ran the file's key-derivation function twice on the main thread —
+  once to encrypt and once to verify — freezing the window for each edit. Saves now run
+  off the main thread from a snapshot of the document, one at a time, so a later edit is
+  never overwritten by an earlier save finishing last.
+- Signing in to a server, and the master-password reprompt, also ran the KDF on the main
+  thread. Both now run it off the main thread.
+
+**Correctness**
+
+- A server address with capitals in its path worked for the first sign-in and failed on
+  the next biometric unlock, because the whole address was stored lowercased. The path now
+  keeps its case; account ids are unchanged.
+
+**Documentation**
+
+- `docs/security-model.md` and `SECURITY.md` said decrypted attachment previews were
+  written to a temporary directory and cleaned up on lock. No such directory exists:
+  previews are held in memory only. Both now say so.
 
 ## UI / UX decisions
 

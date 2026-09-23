@@ -4,10 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  # SwiftPM: ecosystem "swift" требует Package.swift в каталоге.
-  # Здесь SPM идёт через Xcode-проект (только Package.resolved), поэтому
-  # апдейтер ниже оставлен закомментированным до появления Package.swift.
-  # - package-ecosystem: "swift"
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
+  # SwiftPM не отслеживается: удалённых Swift-пакетов нет. Единственная сторонняя
+  # зависимость — эталонная реализация Argon2 — лежит в Packages/Argon2 на
+  # зафиксированном коммите и обновляется вручную по Packages/Argon2/PROVENANCE.md,
+  # с полным прогоном тестов: изменение вывода KDF закрывает пользователям доступ
+  # к хранилищам. CI проверяет каждый файл по SHA256SUMS.

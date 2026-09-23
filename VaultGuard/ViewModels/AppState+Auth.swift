@@ -6,6 +6,21 @@ extension AppState {
     /// Log in to `serverURL` as `email`. Doubles as "add account": a successful login
     /// registers the account, makes it active and unlocks it. Any previously-unlocked
     /// session is torn down first.
+    /// Run the master-password KDF off the main actor, into an instance no one else holds.
+    ///
+    /// `nonisolated` plus `Task.detached` rather than relying on how a plain async function is
+    /// scheduled: under a later Swift default, a nonisolated async function inherits its
+    /// caller's actor, and the KDF would move back onto the main thread without any warning.
+    nonisolated static func deriveSession(password: String, email: String, kdf: Int, iterations: Int,
+                                          memory: Int?, parallelism: Int?) async throws -> CryptoService {
+        try await Task.detached(priority: .userInitiated) {
+            let fresh = CryptoService()
+            try fresh.deriveKeys(password: password, email: email, kdf: kdf, kdfIterations: iterations,
+                                 kdfMemory: memory, kdfParallelism: parallelism)
+            return fresh
+        }.value
+    }
+
     func login(serverURL: String, email: String, password: String, saveBiometric: Bool, allowSelfSigned: Bool? = nil, label: String? = nil) async {
         isLoading = true; errorMessage = nil
         rebuildActiveSession()
@@ -13,8 +28,14 @@ extension AppState {
         do {
             await api.configure(serverURL: serverURL, allowSelfSigned: ss)
             let pre = try await api.prelogin(email: email)
-            try crypto.deriveKeys(password: password, email: email, kdf: pre.kdf,
-                                  kdfIterations: pre.kdfIterations, kdfMemory: pre.kdfMemory, kdfParallelism: pre.kdfParallelism)
+            // The KDF — hundreds of thousands of PBKDF2 rounds, or tens of MiB of Argon2 — ran
+            // here on the main actor and froze the window for the whole derivation, spinner
+            // included. It now runs into a fresh instance off the main thread, which is then
+            // installed below. The live `crypto` is still only ever mutated on the main actor:
+            // nobody else can see the fresh instance while it is being filled.
+            installCryptoSession(try await Self.deriveSession(
+                password: password, email: email, kdf: pre.kdf, iterations: pre.kdfIterations,
+                memory: pre.kdfMemory, parallelism: pre.kdfParallelism))
             guard let hash = crypto.passwordHash else { throw AuthError.keyDerivationFailed }
             let tok: TokenResponse
             do {
@@ -37,6 +58,7 @@ extension AppState {
                                        saveBiometric: saveBiometric, tok: tok,
                                        kdf: pre.kdf, kdfIterations: pre.kdfIterations,
                                        kdfMemory: pre.kdfMemory, kdfParallelism: pre.kdfParallelism, label: label)
+            Log.audit("vault unlocked: password login")
         } catch {
             // A self-signed server whose certificate isn't trusted yet: show its fingerprint
             // and let the user confirm, instead of failing with a generic error.
@@ -46,6 +68,7 @@ extension AppState {
                 isLoading = false
                 return
             }
+            Log.audit("login failed")
             errorMessage = error.localizedDescription
         }
         isLoading = false
@@ -244,7 +267,11 @@ extension AppState {
 
             try await syncVault()   // -> applySync -> publishAutoFill (shares the AutoFill secret)
             isUnlocked = true; startAutoLockTimer(); setupSleepObservers()
-        } catch { errorMessage = error.localizedDescription }
+            Log.audit("vault unlocked: biometric")
+        } catch {
+            Log.audit("biometric unlock failed")
+            errorMessage = error.localizedDescription
+        }
         isLoading = false
     }
 
@@ -257,6 +284,12 @@ extension AppState {
         lock()
         rebuildActiveSession()
         accounts.setActive(accountId)
+        // `folderOrder` is persisted under a key derived from the active account id, and still
+        // holds the previous account's order at this point. Reload it now: otherwise the first
+        // write (a folder reorder) would store the old account's order under the new account's
+        // key.
+        reloadFolderOrderForActiveAccount()
+        reloadRecentForActiveAccount()
         // Leave the newly selected account locked. The user unlocks it from the unlock screen
         // (Touch ID button or master password). Auto-prompting biometric on every switch caused
         // a spurious "authentication cancelled" message and an unexpected Touch ID popup.
@@ -265,11 +298,14 @@ extension AppState {
     // MARK: - Lock / Logout
 
     func lock() {
+        if isUnlocked { Log.audit("vault locked") }
         isUnlocked = false; ciphers = []; folders = []; collections = []; organizations = []
-        selectedCipherId = nil; activeVaultId = nil; wipeCryptoSession()
+        selectedCipherIds = []; activeVaultId = nil; wipeCryptoSession()
         keePassBackend = nil
         keePassFileBookmark = nil
+        keePassUpgradeNoticeShown = false
         repromptVerifiedCipherIds.removeAll(); pendingReprompt = nil
+        clearClipboardIfOurs()
         autoLockTimer?.invalidate(); autoLockTimer = nil
         removeSleepObservers()
         // Revoke AutoFill access: the shared AutoFill secret is only valid while unlocked.
@@ -295,6 +331,7 @@ extension AppState {
         if let id {
             VaultCache.forAccount(id).clear() // wipe this account's cache file + key
             AutoFillCache.clear(accountId: id)
+            forgetAccountPreferences(id)
             do { try accounts.remove(id) }    // also reassigns the active pointer
             catch { wipeFailed = true }
         }
@@ -311,7 +348,11 @@ extension AppState {
         lock()
         Task { await api.clearTokens() }
         let ids = accounts.accounts.map { $0.id }
-        for id in ids { VaultCache.forAccount(id).clear(); AutoFillCache.clear(accountId: id) }
+        for id in ids {
+            VaultCache.forAccount(id).clear()
+            AutoFillCache.clear(accountId: id)
+            forgetAccountPreferences(id)
+        }
         CredentialIdentityStoreManager.clear()
         var wipeFailed = false
         do { try accounts.removeAll(ids) } catch { wipeFailed = true }
@@ -328,6 +369,7 @@ extension AppState {
         if id == accounts.activeAccountId { logout(); return }
         VaultCache.forAccount(id).clear()
         AutoFillCache.clear(accountId: id)
+        forgetAccountPreferences(id)
         do { try accounts.remove(id) }
         catch {
             Log.fault("removeAccount: secret wipe incomplete")

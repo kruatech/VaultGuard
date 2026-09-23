@@ -2,24 +2,8 @@ import Foundation
 import SwiftUI
 import Combine
 
-// MARK: - Filter & Sort
-
-enum VaultFilter: Hashable {
-    case all, favorites, trash
-    case type(CipherType)
-    case folder(String)
-    case collection(String)
-}
-
-enum VaultSort: String, CaseIterable {
-    case name, modified
-    var displayName: String {
-        switch self {
-        case .name: return L10n.Items.sortName.localized
-        case .modified: return L10n.Items.sortDate.localized
-        }
-    }
-}
+// `VaultFilter` and `VaultSort` live in `Services/VaultListPipeline.swift`, next to the
+// pipeline that consumes them, so the unit-test target can build them without this file.
 
 enum AppTheme: String, CaseIterable {
     case system, light, dark
@@ -61,7 +45,7 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
 
     // Data
-    @Published var ciphers: [VaultCipher] = [] { didSet { recomputeDerived() } }
+    @Published var ciphers: [VaultCipher] = [] { didSet { rebuildSearchIndex(); recomputeDerived() } }
     @Published var folders: [VaultFolder] = []
     @Published var collections: [VaultCollection] = []
     @Published var organizations: [VaultOrganization] = []
@@ -75,9 +59,35 @@ final class AppState: ObservableObject {
     @Published var filter: VaultFilter = .all { didSet { recomputeDerived() } }
     @Published var sort: VaultSort = .name { didSet { recomputeDerived() } }
     @Published var searchText = "" { didSet { recomputeDerived() } }
-    @Published var selectedCipherId: String?
+    /// The list's selection. A set because the list allows picking several rows; the bulk
+    /// actions operate on exactly this.
+    @Published var selectedCipherIds: Set<String> = []
+
+    /// The single selected item, when there is exactly one.
+    ///
+    /// Kept as the name the rest of the app already uses — the detail view, keyboard
+    /// navigation, and every "deselect what I just deleted" line read and write this. Reading
+    /// it with a multi-selection gives nil, which is what those call sites want: there is no
+    /// one item to show or to copy from.
+    var selectedCipherId: String? {
+        get { selectedCipherIds.count == 1 ? selectedCipherIds.first : nil }
+        set { selectedCipherIds = newValue.map { [$0] } ?? [] }
+    }
+
+    /// Selected items in the order they appear in the list, skipping ids that no longer exist.
+    var selectedCiphers: [VaultCipher] {
+        filteredCiphers.filter { selectedCipherIds.contains($0.id) }
+    }
+
+    /// True once more than one row is picked — the point at which the UI switches from
+    /// showing an item to offering actions over a group.
+    var hasMultipleSelection: Bool { selectedCipherIds.count > 1 }
     @Published var pendingReprompt: RepromptRequest?
     var repromptVerifiedCipherIds: Set<String> = []
+
+    /// The last secret placed on the pasteboard by `copyToClipboard`, so `lock()` can take it
+    /// back off. Not a `@Published` — no view shows it.
+    var lastCopiedValue: String?
 
     // Sheets
     @Published var showEditSheet = false
@@ -96,14 +106,16 @@ final class AppState: ObservableObject {
         case .type(let t): newItemPrefillType = t
         case .folder(let id): newItemPrefillFolderId = id
         case .favorites: newItemPrefillFavorite = true
-        case .all, .trash, .collection: break
+        case .all, .recent, .trash, .collection: break
         }
         editingCipher = nil
         showEditSheet = true
     }
     @Published var showDeleteConfirm = false
     @Published var deletingCipher: VaultCipher?
+    @Published var showBulkDeleteConfirm = false
     @Published var showGenerator = false
+    @Published var showPasswordHealth = false
     @Published var showSends = false
     @Published var showAddAccount = false
     @Published var toasts: [ToastMessage] = []
@@ -192,6 +204,46 @@ final class AppState: ObservableObject {
         return copy.id
     }
 
+    // MARK: - Recently used
+
+    /// The "recently used" list. Logic lives in `RecentCiphersStore`; this holds the value
+    /// and keeps it on disk.
+    @Published private(set) var recent = RecentCiphersStore()
+
+    /// Note that an item was used. Called where the user copies something out of a specific
+    /// entry — opening one to look at it is not the same as using it.
+    func recordCipherUsed(_ cipherId: String) {
+        recent.record(cipherId)
+        recent.save(for: accounts.activeAccountId)
+        recomputeDerived()
+    }
+
+    /// Reload the list for the active account. Same reason as the folder order: the key is
+    /// derived from the account id, so it has to be re-read after a switch.
+    func reloadRecentForActiveAccount() {
+        recent = RecentCiphersStore(loadingFor: accounts.activeAccountId)
+        recomputeDerived()
+    }
+
+    /// Remove the per-account preferences kept in `UserDefaults` — the manual folder order and
+    /// the recently-used list — for an account that is being signed out of or removed.
+    ///
+    /// Both used to outlive the account. "Log out and delete all local data" promises to remove
+    /// local metadata, and these are local metadata: item and folder ids that say which entries
+    /// exist and which were used. They are keyed by account id, so they would also have been
+    /// inherited by a later account that happened to reuse it.
+    func forgetAccountPreferences(_ accountId: String) {
+        UserDefaults.standard.removeObject(forKey: "folderOrder.\(accountId)")
+        clearRecent(accountId: accountId)
+    }
+
+    /// Drop the list for an account being removed, so a later account reusing the id does not
+    /// inherit it.
+    func clearRecent(accountId: String) {
+        RecentCiphersStore.clear(for: accountId)
+        if accounts.activeAccountId == accountId { recent = RecentCiphersStore() }
+    }
+
     /// Per-account UserDefaults key for the manual folder order. Uses a neutral key when
     /// there's no active account yet.
     private var folderOrderKey: String {
@@ -201,6 +253,25 @@ final class AppState: ObservableObject {
     // Attachment upload progress
     @Published var isUploadingAttachments = false
     @Published var attachmentUploadProgress: Double = 0
+
+    // Progress for any long run of per-item work — an import, or a bulk action over a
+    // selection. `isLoading` alone just froze the window: a thousand-item import creates each
+    // entry over the network one at a time, and the user had a motionless spinner with no way
+    // to tell progress from a hang.
+    @Published var isBatchRunning = false
+    @Published var batchDone = 0
+    @Published var batchTotal = 0
+
+    /// 0...1 for a determinate ProgressView; 0 while the total is unknown.
+    var batchProgress: Double {
+        batchTotal > 0 ? Double(batchDone) / Double(batchTotal) : 0
+    }
+
+    func beginBatch(total: Int) {
+        batchTotal = total; batchDone = 0; isBatchRunning = total > 0
+    }
+    func advanceBatch() { batchDone += 1 }
+    func endBatch() { isBatchRunning = false; batchDone = 0; batchTotal = 0 }
 
     private(set) var api = APIService()
     private(set) var crypto = CryptoService()
@@ -214,6 +285,15 @@ final class AppState: ObservableObject {
     /// vault can be re-read while unlocked). Created in `openKeePass`, cleared in `lock()`.
     /// nil for server (Bitwarden) accounts.
     var keePassBackend: KeePassBackend?
+
+    /// True once the "this file was upgraded from KDBX 3" notice has been shown for the current
+    /// KeePass session. Reset in `lock()` along with the backend, so reopening the file warns
+    /// again rather than staying silent forever.
+    var keePassUpgradeNoticeShown = false
+
+    /// The KeePass save currently in progress, if any. Each save waits for the one before it;
+    /// see `writeKeePassToDisk` for why they must not overlap.
+    var keePassSaveChain: Task<Void, Error>?
 
     /// Security-scoped bookmark to the active KeePass .kdbx, kept in memory so the file can be
     /// written back during this session (even when biometric persistence wasn't requested).
@@ -255,9 +335,17 @@ final class AppState: ObservableObject {
         folderSortMode = FolderSortMode(rawValue: UserDefaults.standard.string(forKey: "folderSortMode") ?? "alphabetical") ?? .alphabetical
 
         // Load all templates as-is; every template is editable/deletable (no read-only built-ins).
-        if let data = UserDefaults.standard.data(forKey: "passwordTemplates"),
-           let arr = try? JSONDecoder().decode([PasswordTemplate].self, from: data) {
-            passwordTemplates = arr
+        if let data = UserDefaults.standard.data(forKey: "passwordTemplates") {
+            if let arr = try? JSONDecoder().decode([PasswordTemplate].self, from: data) {
+                passwordTemplates = arr
+            } else {
+                // Same shape as the account-index hazard, with far less at stake: the next
+                // save replaces templates that only failed to decode. They are generator
+                // presets the user can recreate, so this is logged rather than guarded —
+                // but silently is the one way it must not happen.
+                passwordTemplates = []
+                Log.fault("password templates could not be decoded — they will be replaced on the next save")
+            }
         } else {
             passwordTemplates = []
         }
@@ -301,6 +389,14 @@ final class AppState: ObservableObject {
         crypto = CryptoService()
     }
 
+    /// Install a session whose keys were derived elsewhere — off the main actor, into an
+    /// instance nothing else held. The counterpart of `wipeCryptoSession`: both replace the
+    /// instance rather than mutate it, which is what keeps a decrypt already running on a
+    /// detached task working with the keys it started with.
+    func installCryptoSession(_ session: CryptoService) {
+        crypto = session
+    }
+
     /// Tear down the in-memory crypto/network session and start fresh ones. Used before a
     /// new login and when switching accounts, so no key material or token survives the swap.
     func rebuildActiveSession() {
@@ -314,6 +410,9 @@ final class AppState: ObservableObject {
         guard accounts.contains(id), id != accounts.activeAccountId else { return }
         rebuildActiveSession()
         accounts.setActive(id)
+        // Same reason as in switchAccount: the persisted folder order is keyed by account id.
+        reloadFolderOrderForActiveAccount()
+        reloadRecentForActiveAccount()
     }
 
     // MARK: - Computed: Active Vault
@@ -353,7 +452,10 @@ final class AppState: ObservableObject {
         return collections.filter { $0.organizationId == orgId }
     }
 
-    var selectedCipher: VaultCipher? { ciphers.first { $0.id == selectedCipherId } }
+    var selectedCipher: VaultCipher? {
+        guard let id = selectedCipherId else { return nil }
+        return ciphers.first { $0.id == id }
+    }
 
     // Cached derived data. Recomputed only when a source input changes
     // (ciphers / activeVaultId / filter / sort / searchText). Not @Published: the source
@@ -361,61 +463,40 @@ final class AppState: ObservableObject {
     // they read the freshly-recomputed value. Publishing it again from inside a source's
     // didSet would trigger "Publishing changes from within view updates".
     private(set) var filteredCiphers: [VaultCipher] = []
-    private var countAll = 0
-    private var countFavorites = 0
-    private var countTrash = 0
-    private var countByType: [CipherType: Int] = [:]
-    private var countByFolder: [String: Int] = [:]
-    private var countByCollection: [String: Int] = [:]
+
+    /// cipherId -> lowercased searchable text. `VaultCipher.searchableText` is a computed
+    /// property that allocates an array, parses the item's URL and builds two strings on every
+    /// read, so evaluating it inside the search filter cost one full rebuild per item per
+    /// keystroke. It is materialised here instead and refreshed only when `ciphers` changes.
+    private var searchIndex: [String: String] = [:]
+
+    /// Sidebar counts, refreshed with the list in `recomputeDerived`.
+    private var counts = VaultCounts()
+
+    /// Rebuild the cached searchable text. Called from `ciphers.didSet` only — the index is
+    /// keyed by cipher id and does not depend on the active vault, filter, sort or query.
+    func rebuildSearchIndex() {
+        var idx: [String: String] = [:]
+        idx.reserveCapacity(ciphers.count)
+        for c in ciphers { idx[c.id] = c.searchableText }
+        searchIndex = idx
+    }
 
     /// Recompute the filtered list and all sidebar counts in a single pass over the vault.
     func recomputeDerived() {
-        let vault = vaultCiphers
-        let active = vault.filter { $0.deletedDate == nil }
-
-        // Filtered list for the current filter/search/sort.
-        var result: [VaultCipher]
-        switch filter {
-        case .all: result = active
-        case .favorites: result = active.filter { $0.favorite }
-        case .type(let t): result = active.filter { $0.type == t }
-        case .folder(let id): result = active.filter { $0.folderId == id }
-        case .collection(let id): result = active.filter { $0.collectionIds?.contains(id) == true }
-        case .trash: result = vault.filter { $0.deletedDate != nil }
-        }
-        if !searchText.isEmpty {
-            let q = searchText.lowercased()
-            result = result.filter { $0.searchableText.contains(q) }
-        }
-        switch sort {
-        case .name: result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .modified: result.sort { ($0.revisionDate ?? .distantPast) > ($1.revisionDate ?? .distantPast) }
-        }
-        filteredCiphers = result
-
-        // Sidebar counts — computed once here, read O(1) by countFor(filter:).
-        countAll = active.count
-        countTrash = vault.count - active.count
-        var fav = 0
-        var byType: [CipherType: Int] = [:]
-        var byFolder: [String: Int] = [:]
-        var byCollection: [String: Int] = [:]
-        for c in active {
-            if c.favorite { fav += 1 }
-            byType[c.type, default: 0] += 1
-            if let f = c.folderId { byFolder[f, default: 0] += 1 }
-            for cid in c.collectionIds ?? [] { byCollection[cid, default: 0] += 1 }
-        }
-        countFavorites = fav
-        countByType = byType
-        countByFolder = byFolder
-        countByCollection = byCollection
+        // The work itself is `VaultListPipeline`, a pure function the unit tests can reach.
+        let output = VaultListPipeline.run(.init(
+            vault: vaultCiphers, filter: filter, sort: sort, searchText: searchText,
+            searchIndex: searchIndex, recent: recent))
+        filteredCiphers = output.list
+        counts = output.counts
     }
 
     var filterTitle: String {
         switch filter {
         case .all: return L10n.Sidebar.allItems.localized
         case .favorites: return L10n.Sidebar.favorites.localized
+        case .recent: return L10n.Sidebar.recent.localized
         case .type(let t): return t.localizedName
         case .folder(let id): return folders.first { $0.id == id }?.name ?? L10n.Sidebar.folders.localized
         case .collection(let id): return collections.first { $0.id == id }?.name ?? L10n.Sidebar.collections.localized
@@ -426,12 +507,13 @@ final class AppState: ObservableObject {
     /// O(1) lookup into the cached counts (populated by recomputeDerived()).
     func countFor(filter: VaultFilter) -> Int {
         switch filter {
-        case .all: return countAll
-        case .favorites: return countFavorites
-        case .type(let t): return countByType[t] ?? 0
-        case .folder(let id): return countByFolder[id] ?? 0
-        case .collection(let id): return countByCollection[id] ?? 0
-        case .trash: return countTrash
+        case .all: return counts.all
+        case .favorites: return counts.favorites
+        case .recent: return counts.recent
+        case .type(let t): return counts.byType[t] ?? 0
+        case .folder(let id): return counts.byFolder[id] ?? 0
+        case .collection(let id): return counts.byCollection[id] ?? 0
+        case .trash: return counts.trash
         }
     }
 }

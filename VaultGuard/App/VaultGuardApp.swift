@@ -3,6 +3,7 @@ import SwiftUI
 struct VaultGuardApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var localization = LocalizationManager.shared
+    @StateObject private var textScale = TextScaleManager.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene {
         WindowGroup {
@@ -10,6 +11,12 @@ struct VaultGuardApp: App {
                 .environmentObject(appState)
                 .environmentObject(appState.accounts)
                 .environmentObject(localization)
+                .environmentObject(textScale)
+                // VGFont reads a plain static, so nothing in the view tree depends on the
+                // scale as far as SwiftUI can tell. Tying the window's identity to the value
+                // forces a rebuild when it changes; without it the setting only takes effect
+                // on the next launch.
+                .id(textScale.scale)
                 .background(MainWindowAccessor())
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
@@ -26,6 +33,24 @@ struct VaultGuardApp: App {
                     NotificationCenter.default.post(name: .newItem, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                Divider()
+                // ⌘L is the lock shortcut every password manager uses; not having it was the
+                // most surprising omission. Both post a notification rather than touching
+                // AppState directly, matching the existing commands: the main window picks
+                // them up only while it is showing the unlocked UI, so invoking either from
+                // the lock screen does nothing instead of misfiring.
+                Button(L10n.Sidebar.lock.localized) {
+                    NotificationCenter.default.post(name: .lockVault, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: .command)
+                Button(L10n.Sidebar.generator.localized) {
+                    NotificationCenter.default.post(name: .showGenerator, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                Button(L10n.Sidebar.sync.localized) {
+                    NotificationCenter.default.post(name: .syncVault, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
             }
             CommandGroup(after: .textEditing) {
                 Button(L10n.search.localized) {
@@ -39,12 +64,26 @@ struct VaultGuardApp: App {
                 .keyboardShortcut("k", modifiers: .command)
                 .hidden()
             }
+            CommandGroup(after: .toolbar) {
+                Button(L10n.Settings.textLarger.localized) { textScale.increase() }
+                    .keyboardShortcut("+", modifiers: .command)
+                    .disabled(!textScale.canIncrease)
+                Button(L10n.Settings.textSmaller.localized) { textScale.decrease() }
+                    .keyboardShortcut("-", modifiers: .command)
+                    .disabled(!textScale.canDecrease)
+                Button(L10n.Settings.textReset.localized) { textScale.reset() }
+                    .keyboardShortcut("0", modifiers: .command)
+                Divider()
+            }
             CommandGroup(before: .windowList) {
                 Divider()
                 Button(L10n.Window.showMain.localized) {
                     MainWindowController.shared.showMainWindow()
                 }
-                .keyboardShortcut("0", modifiers: .command)
+                // Moved off ⌘0, which now resets the text size — that is what ⌘0 means
+                // everywhere else on the Mac, and the audit already flagged ⌘0 for "show
+                // window" as surprising.
+                .keyboardShortcut("0", modifiers: [.command, .shift])
             }
         }
 
@@ -53,6 +92,8 @@ struct VaultGuardApp: App {
                 .environmentObject(appState)
                 .environmentObject(appState.accounts)
                 .environmentObject(localization)
+                .environmentObject(textScale)
+                .id(textScale.scale)
         }
     }
 
@@ -137,8 +178,11 @@ struct ContentView: View {
     private func installEventMonitor() {
         // Remove any existing monitor first to prevent leaks
         removeEventMonitor()
+        // `.mouseMoved` used to be in this list, so a cursor merely passing over the window —
+        // or resting on it while the user worked in another app — kept resetting the idle timer,
+        // and the vault never auto-locked. Using the vault means typing, clicking or scrolling.
         eventMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel, .mouseMoved]
+            matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]
         ) { [weak appState] event in
             appState?.recordActivity()
             return event
@@ -180,4 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let newItem = Notification.Name("newItem")
     static let focusSearch = Notification.Name("focusSearch")
+    static let lockVault = Notification.Name("lockVault")
+    static let showGenerator = Notification.Name("showGenerator")
+    static let syncVault = Notification.Name("syncVault")
 }

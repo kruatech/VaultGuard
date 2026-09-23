@@ -18,11 +18,38 @@ import Compression
 enum KDBXEditor {
     /// Decrypt all Protected values inline, returning an editable `XMLDocument` whose
     /// Protected values hold plaintext. Order matches the reader (document order).
-    static func makeEditable(xml: Data, stream: KDBXProtectedStream) throws -> XMLDocument {
+    /// - Parameter removeLegacyBinaryPool: strips `<Meta><Binaries>` from the document.
+    ///
+    ///   Set it only when the reader has already lifted that pool into the inner-header
+    ///   binaries — which it does for KDBX 3, where attachments live in the XML. The writer
+    ///   emits KDBX 4, whose readers take attachments from the inner header and ignore the
+    ///   old location, so leaving the pool in place would write every attachment twice: once
+    ///   as base64 in the XML and once in the header. Correct, but double the size.
+    ///
+    ///   For a KDBX 4 source it must stay false. Nothing lifted that pool, so removing it
+    ///   would delete the only copy.
+    static func makeEditable(xml: Data, stream: KDBXProtectedStream,
+                             removeLegacyBinaryPool: Bool = false) throws -> XMLDocument {
         let doc = try XMLDocument(data: xml, options: [.nodePreserveWhitespace])
+        if removeLegacyBinaryPool,
+           let pools = try? doc.nodes(forXPath: "//Meta/Binaries") {
+            for node in pools {
+                guard let el = node as? XMLElement, let parent = el.parent as? XMLElement else { continue }
+                parent.removeChild(at: el.index)
+            }
+        }
         for node in try doc.nodes(forXPath: "//Value[@Protected='True']") {
             guard let el = node as? XMLElement else { continue }
-            el.stringValue = stream.decrypt(el.stringValue ?? "") ?? ""
+            // A failure here cannot be swallowed. The inner random stream is a single
+            // keystream shared by every protected value in document order: a value that
+            // fails to decode either did not advance the stream (bad base64) or produced
+            // bytes that are not text, and in both cases every later value is suspect.
+            // Substituting "" used to hide that — and the empty string would then be
+            // re-encrypted and written back over the user's real password on the next save.
+            guard let plaintext = stream.decrypt(el.stringValue ?? "") else {
+                throw KDBXError.protectedValueCorrupted
+            }
+            el.stringValue = plaintext
         }
         return doc
     }

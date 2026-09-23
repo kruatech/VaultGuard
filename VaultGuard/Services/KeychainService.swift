@@ -182,7 +182,7 @@ final class KeychainService {
 
     /// Read the shared AutoFill secret, if the main app currently has the account unlocked.
     func autoFillSecret(accountId: String) -> Data? {
-        guard let json = try? load(key: autoFillSecretName(accountId), group: .shared) else { return nil }
+        guard let json = try? load(key: autoFillSecretName(accountId), group: .shared, noUI: true) else { return nil }
         // Decode the {key, expiry} payload. A malformed value, or a legacy plain-base64 value
         // written before TTL support (no expiry), is dropped and treated as locked.
         guard let data = json.data(using: .utf8),
@@ -225,7 +225,7 @@ final class KeychainService {
 
     /// Read the stored vault kind for an account, or nil when none is stored.
     func vaultKind(accountId: String) -> String? {
-        try? load(key: vaultKindName(accountId), group: .shared)
+        try? load(key: vaultKindName(accountId), group: .shared, noUI: true)
     }
 
     func clearVaultKind(accountId: String) throws {
@@ -281,8 +281,19 @@ final class KeychainService {
 
     /// Read the stored passkeys JSON for an account using a pre-authenticated context
     /// (`passkeyAuthContext`). Returns nil when nothing is stored.
-    func loadPasskeys(accountId: String, context: LAContext) -> String? {
-        guard let data = try? loadProtected(key: passkeysKeyName(accountId), context: context, group: .shared) else { return nil }
+    /// Stored passkeys for an account.
+    ///
+    /// - Returns: nil when nothing has ever been stored for this account.
+    /// - Throws: when an item exists but could not be read — a cancelled or expired
+    ///   authentication context, a locked keychain, an entitlement mismatch.
+    ///
+    /// The distinction is the whole point of this signature. It used to be a `try?` that
+    /// returned nil either way, and every caller read that as "no passkeys yet". A caller
+    /// that then saved an updated set overwrote credentials it had simply failed to read.
+    func loadPasskeys(accountId: String, context: LAContext) throws -> String? {
+        guard let data = try loadProtected(key: passkeysKeyName(accountId), context: context, group: .shared) else {
+            return nil
+        }
         return String(data: data, encoding: .utf8)
     }
 
@@ -308,7 +319,7 @@ final class KeychainService {
 
     /// Identifier of the account that should be unlocked on launch / after switch.
     var activeAccountId: String? {
-        get { try? load(key: GlobalKey.activeAccountId, group: .shared) }
+        get { try? load(key: GlobalKey.activeAccountId, group: .shared, noUI: true) }
         set { setOrDelete(key: GlobalKey.activeAccountId, value: newValue, group: .shared) }
     }
 
@@ -565,7 +576,14 @@ final class KeychainService {
         }
     }
 
-    private func load(key: String, context: LAContext? = nil, group: AccessGroup = .appPrivate) throws -> String? {
+    /// `noUI: true` forbids any interactive prompt while reading.
+    ///
+    /// Required by the AutoFill extension: it runs in its own process and cannot show a
+    /// system dialog before its interface is drawn. Without the restriction,
+    /// SecItemCopyMatching waits for an answer from a prompt nobody will ever see and the
+    /// extension hangs. With it, errSecInteractionNotAllowed comes back and the caller
+    /// offers to open the main app instead.
+    private func load(key: String, context: LAContext? = nil, group: AccessGroup = .appPrivate, noUI: Bool = false) throws -> String? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -576,6 +594,9 @@ final class KeychainService {
         ]
         if let ctx = context {
             query[kSecUseAuthenticationContext as String] = ctx
+        }
+        if noUI {
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip
         }
 
         var result: AnyObject?

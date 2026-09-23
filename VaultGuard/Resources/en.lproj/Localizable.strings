@@ -3,6 +3,7 @@
 "common.save" = "Save";
 "common.delete" = "Delete";
 "common.close" = "Close";
+"common.clear" = "Clear";
 "common.copy" = "Copy";
 "common.download" = "Download";
 "common.preview" = "Preview";
@@ -25,6 +26,7 @@
 "auth.title" = "VaultGuard";
 "auth.subtitle" = "Password Manager";
 "auth.serverLabel" = "Server address";
+"auth.plainHTTPWarning" = "Not encrypted: anyone on this network can read your sign-in and use it. Use https:// — a self-signed certificate works with the option below.";
 "auth.serverPlaceholder" = "https://vault.example.com";
 "auth.emailLabel" = "Email";
 "auth.emailPlaceholder" = "user@example.com";
@@ -52,6 +54,7 @@
 
 /* Sidebar */
 "sidebar.allItems" = "All Items";
+"sidebar.recent" = "Recently used";
 "sidebar.favorites" = "Favorites";
 "sidebar.vault" = "Vault";
 "sidebar.types" = "Types";
@@ -59,6 +62,14 @@
 "sidebar.collections" = "Collections";
 "sidebar.trash" = "Trash";
 "sidebar.newFolder" = "New Folder";
+"sidebar.passwordHealth" = "Password health";
+"health.title" = "Password health";
+"health.subtitle" = "Checked on this Mac. Nothing is sent anywhere.";
+"health.allClear" = "No problems found";
+"health.reused" = "Reused across %d items";
+"health.weak" = "Weak password";
+"health.empty" = "No password saved";
+"health.stale" = "Unchanged for %d days";
 "sidebar.generator" = "Generator";
 "sidebar.sends" = "Sends";
 "send.title" = "Sends";
@@ -71,6 +82,8 @@
 "send.unlimited" = "Max accesses: unlimited";
 "send.hideEmail" = "Hide my email from recipients";
 "send.password" = "Password (optional)";
+"send.clearPassword" = "Clear password";
+"send.passwordCleared" = "Send password removed";
 "send.nameLabel" = "Name";
 "send.contentLabel" = "Text to share";
 "send.hideText" = "Hide text by default";
@@ -103,6 +116,10 @@
 "items.newItem" = "New";
 "items.sortName" = "A-Z";
 "items.sortDate" = "Date";
+"items.bulkSelected" = "%d items selected";
+"items.bulkDelete" = "Delete %d items";
+"items.bulkDeleteConfirm" = "Delete %d items?";
+"items.bulkPartialFailure" = "%d done, %d failed";
 "items.notFound" = "Not found";
 "items.noResults" = "No results for “%@”";
 "items.emptyTitle" = "Create your first item";
@@ -131,6 +148,9 @@
 "detail.created" = "Created";
 "detail.modified" = "Modified";
 "detail.passwordAge" = "Password";
+"detail.expires" = "Expires";
+"detail.expired" = "Expired";
+"detail.tags" = "Tags";
 "detail.restore" = "Restore";
 "detail.restored" = "Restored from trash";
 "detail.deleteForever" = "Delete Forever";
@@ -239,6 +259,11 @@
 "settings.themeLight" = "Light";
 "settings.themeDark" = "Dark";
 "settings.language" = "Language";
+"settings.textSize" = "Text size";
+"settings.textSizeHint" = "macOS has no system-wide Dynamic Type, so VaultGuard carries its own text size. Also on ⌘+ and ⌘−; ⌘0 resets it.";
+"settings.textLarger" = "Larger text";
+"settings.textSmaller" = "Smaller text";
+"settings.textReset" = "Actual size";
 "settings.showFavicons" = "Show website favicons";
 "settings.logoutButton" = "Log out and delete all local data";
 "settings.vaultguardDesc" = "Native macOS client for Vaultwarden";
@@ -297,14 +322,30 @@
 "migration.importButton" = "Import from KeePass (.kdbx)…";
 "migration.importJSONButton" = "Import Bitwarden .json";
 "migration.importJSONHint" = "Import an unencrypted Bitwarden JSON export. Merges into your vault (no dedup).";
+"migration.import1PUXButton" = "Import 1Password (.1pux)";
+"migration.import1PUXHint" = "Import a 1Password unencrypted export. Logins, cards, identities and notes come across with their custom fields; documents and file attachments do not.";
 "migration.importCSVButton" = "Import CSV (LastPass / Bitwarden)";
 "migration.importCSVHint" = "Import a CSV export. LastPass, Bitwarden, and generic url/username/password layouts are recognized.";
+"migration.exportJSONButton" = "Export as Bitwarden JSON";
+"migration.exportJSONTitle" = "Move to a Bitwarden server";
+"migration.exportJSONHint" = "The file is NOT encrypted: every password is readable as plain text. Import it into Bitwarden, then delete it. Attachments and KeePass icons are not included.";
+"migration.jsonExported" = "Export written";
+"backup.title" = "Local backups";
+"backup.hint" = "A snapshot of the .kdbx is taken before every save; the ten most recent are kept. Save a copy somewhere, then open it like any other database — VaultGuard never writes a snapshot back over your file.";
+"backup.empty" = "No backups yet";
+"backup.saveCopy" = "Save a copy…";
+"backup.delete" = "Delete snapshot";
+"backup.deleteConfirm" = "Delete this snapshot?";
+"backup.deleteMessage" = "It cannot be recovered. A snapshot keeps the password the database had when it was taken — after changing a master password, delete older snapshots so the old password no longer opens them.";
+"backup.deleteRefused" = "That file is not a VaultGuard snapshot, so it was not deleted.";
+"backup.saved" = "Backup copied";
 "migration.importCompleteDedup" = "Imported %d, skipped %d duplicates";
 "migration.importTitle" = "Import database";
 "migration.importHint" = "Entries are added to your current vault as logins. Recycle-bin items are skipped.";
 "migration.importComplete" = "Imported %d entries";
 "migration.importEmpty" = "Nothing to import";
 "migration.chooseFile" = "Choose .kdbx file…";
+"dragdrop.tooLarge" = "Too large to attach (over %2$d MB): %1$@";
 "dragdrop.uploadFailed" = "Upload failed";
 "dragdrop.dropFiles" = "Drop files or folders to attach";
 "dragdrop.dropOrChoose" = "Drop files here or click to choose";
@@ -360,6 +401,7 @@
 "auth.storageKeePass" = "KeePass file";
 "keepass.readOnly" = "This KeePass vault is read-only";
 "keepass.saveBlockedAttachments" = "Save blocked: this database has %d attachment(s), which this version can't preserve yet. Editing attachments is the next step.";
+"keepass.upgradedToV4" = "This database was KDBX 3 and has been saved as KDBX 4.1. Opening it now needs KeePass 2.48 or KeePassXC 2.7, or later.";
 "auth.kdbxFileLabel" = "KeePass file (.kdbx)";
 "auth.kdbxChoose" = "Choose .kdbx file…";
 "auth.keyfileLabel" = "Key file (optional)";

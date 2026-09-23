@@ -17,6 +17,10 @@ struct SidebarView: View {
             )) {
                 Section(L10n.Sidebar.vault.localized) {
                     sidebarRow(.all, icon: "tray.fill", label: L10n.Sidebar.allItems.localized)
+                    // Hidden until something has been used: an always-empty section is noise.
+                    if appState.countFor(filter: .recent) > 0 {
+                        sidebarRow(.recent, icon: "clock.arrow.circlepath", label: L10n.Sidebar.recent.localized)
+                    }
                     if appState.activeVaultKind != .keepass {
                         sidebarRow(.favorites, icon: "star.fill", label: L10n.Sidebar.favorites.localized)
                     }
@@ -75,6 +79,11 @@ struct SidebarView: View {
 
                 Button(action: { appState.showGenerator = true }) {
                     Label(L10n.Sidebar.generator.localized, systemImage: "key.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(SidebarButtonStyle())
+
+                Button(action: { appState.showPasswordHealth = true }) {
+                    Label(L10n.Sidebar.passwordHealth.localized, systemImage: "checkmark.shield")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(SidebarButtonStyle())
 
@@ -182,12 +191,12 @@ struct SidebarView: View {
         }
         .tag(VaultFilter.folder(folder.id))
         .contextMenu {
-            Button("misc.rename".localized) {
+            Button(L10n.Misc.rename.localized) {
                 appState.renamingFolder = folder; appState.folderInputName = folder.name; appState.showRenameFolder = true
             }
             Divider()
-            Button("misc.sortAlphabetically".localized) { appState.folderSortMode = .alphabetical }
-            Button("misc.sortManually".localized) { appState.folderSortMode = .manual }
+            Button(L10n.Misc.sortAlphabetically.localized) { appState.folderSortMode = .alphabetical }
+            Button(L10n.Misc.sortManually.localized) { appState.folderSortMode = .manual }
             Divider()
             Button(L10n.delete.localized, role: .destructive) {
                 appState.deletingFolder = folder; appState.showDeleteFolderConfirm = true
@@ -237,7 +246,7 @@ struct SidebarView: View {
                     .frame(width: 28, height: 28)
                     .overlay { Text(String(appState.profileName.prefix(1)).uppercased()).font(VGFont.captionBold).foregroundColor(VGColor.onAccent) }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(accounts.activeAccount?.label ?? (appState.profileName.isEmpty ? "misc.user".localized : appState.profileName))
+                    Text(accounts.activeAccount?.label ?? (appState.profileName.isEmpty ? L10n.Misc.user.localized : appState.profileName))
                         .font(VGFont.labelEmphasis).lineLimit(1)
                     if !appState.profileEmail.isEmpty {
                         Text(appState.profileEmail).font(VGFont.caption2).foregroundColor(VGColor.secondary).lineLimit(1)

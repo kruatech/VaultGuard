@@ -73,20 +73,52 @@ struct Account: Codable, Identifiable, Hashable {
     /// email always yields the same id, so re-logging into an existing account updates it
     /// in place instead of creating a duplicate.
     static func makeId(serverURL: String, email: String) -> String {
-        let url = normalizeServer(serverURL)
+        let url = identityKey(serverURL)
         let mail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let digest = SHA256.hash(data: Data("\(url)|\(mail)".utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Canonical server string used for id derivation and storage: trimmed, lowercased,
-    /// with an explicit scheme and without a trailing slash. `vault.example.com` and
-    /// `https://vault.example.com/` therefore map to the same account/cache/keychain id.
-    static func normalizeServer(_ s: String) -> String {
+    /// Server string used only to derive the account id: trimmed, fully lowercased, with an
+    /// explicit scheme and without a trailing slash.
+    ///
+    /// This is the original normalization, kept verbatim for ids alone. The account id keys the
+    /// user's tokens and vault key in the Keychain, so changing how it is computed would orphan
+    /// them. Lowercasing the path here is harmless — two addresses that differ only in path case
+    /// simply count as the same account.
+    static func identityKey(_ s: String) -> String {
         var u = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !u.hasPrefix("http://") && !u.hasPrefix("https://") { u = "https://" + u }
         while u.hasSuffix("/") { u.removeLast() }
         return u
+    }
+
+    /// Canonical server address for storage and for every request made to it: trimmed, with an
+    /// explicit scheme, without a trailing slash, and with the scheme and host lowercased.
+    ///
+    /// The path keeps its case. This used to lowercase the whole address, and because the result
+    /// is what gets stored and reused, a server at `https://example.com/Vault` worked for the
+    /// first sign-in — which uses the address as typed — and then failed on the next biometric
+    /// unlock, which read back `/vault`. Hosts are case-insensitive; paths are not.
+    static func normalizeServer(_ s: String) -> String {
+        var u = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = u.lowercased()
+        if !lower.hasPrefix("http://") && !lower.hasPrefix("https://") { u = "https://" + u }
+        while u.hasSuffix("/") { u.removeLast() }
+        // Anything URLComponents cannot parse falls back to the old full lowercasing rather than
+        // being stored in a shape nothing else expects.
+        guard var parts = URLComponents(string: u), parts.host != nil else { return identityKey(s) }
+        parts.scheme = parts.scheme?.lowercased()
+        parts.host = parts.host?.lowercased()
+        return parts.string ?? identityKey(s)
+    }
+
+    /// True when the address would be reached over plain HTTP. Signing in to a Bitwarden server
+    /// sends the master-password hash and receives bearer tokens; over HTTP anyone on the same
+    /// network can read both. The vault itself stays encrypted, but the hash signs in to the
+    /// server account.
+    static func usesPlainHTTP(_ s: String) -> Bool {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("http://")
     }
 
     /// Human label for the account switcher: the user's connection name if set,

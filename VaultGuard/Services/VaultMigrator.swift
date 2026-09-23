@@ -371,6 +371,82 @@ enum VaultMigrator {
         return result
     }
 
+    // MARK: - Bitwarden JSON export (unencrypted)
+
+    private struct BWExportOut: Encodable {
+        let encrypted: Bool
+        let folders: [BWFolderOut]
+        let items: [BWItemOut]
+    }
+    private struct BWFolderOut: Encodable { let id: String; let name: String }
+    private struct BWItemOut: Encodable {
+        let id: String
+        let organizationId: String?
+        let folderId: String?
+        let collectionIds: [String]?
+        let type: Int
+        let name: String
+        let notes: String?
+        let favorite: Bool
+        let reprompt: Int
+        let login: CipherLogin?
+        let card: CipherCard?
+        let identity: CipherIdentity?
+        let secureNote: CipherSecureNote?
+        let fields: [CipherField]?
+    }
+
+    /// Serialize a vault into an *unencrypted* Bitwarden `.json` export.
+    ///
+    /// The mirror of `importBitwardenJSON`, and the way out of what used to be a dead end: a
+    /// user who opened a `.kdbx` and then decided to move to a server had no path off the file.
+    ///
+    /// Two things it cannot carry, both inherent to the format rather than to this code:
+    /// attachments (the export is JSON, the bytes live outside it) and the file's own KeePass
+    /// metadata — icons, history, recycle-bin placement. The output is plaintext by
+    /// construction; that is what "unencrypted export" means, and the caller is responsible for
+    /// warning the user before writing it to disk.
+    static func exportBitwardenJSON(ciphers: [VaultCipher], folders: [VaultFolder]) throws -> Data {
+        // Emit only folders something actually references, so an export never carries empty
+        // groups the importer would recreate for nothing.
+        let usedFolderIds = Set(ciphers.compactMap { $0.folderId })
+        let outFolders = folders
+            .filter { usedFolderIds.contains($0.id) }
+            .map { BWFolderOut(id: $0.id, name: $0.name) }
+
+        let items: [BWItemOut] = ciphers
+            .filter { $0.deletedDate == nil }
+            .map { c in
+                BWItemOut(
+                    id: c.id.isEmpty ? UUID().uuidString : c.id,
+                    organizationId: nil,
+                    folderId: c.folderId,
+                    collectionIds: nil,
+                    type: c.type.rawValue,
+                    name: c.name,
+                    notes: c.notes,
+                    favorite: c.favorite,
+                    reprompt: c.reprompt ?? 0,
+                    login: c.type == .login ? c.login : nil,
+                    card: c.type == .card ? c.card : nil,
+                    identity: c.type == .identity ? c.identity : nil,
+                    secureNote: c.type == .secureNote ? (c.secureNote ?? CipherSecureNote(type: 0)) : nil,
+                    fields: (c.fields?.isEmpty ?? true) ? nil : c.fields)
+            }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(BWExportOut(encrypted: false, folders: outFolders, items: items))
+    }
+
+    // MARK: - 1Password (.1pux)
+
+    /// Import a 1Password unencrypted export. The parsing lives in `OnePasswordImporter`;
+    /// this is the name the rest of the app uses for an import source.
+    static func import1PUX(data: Data) throws -> [ImportedEntry] {
+        try OnePasswordImporter.parse(data)
+    }
+
     // MARK: - Dedup
 
     /// Normalized identity used to detect duplicates: name + type + login username (lowercased).

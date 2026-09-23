@@ -1,10 +1,13 @@
 import Foundation
 import CryptoKit
 
-/// TOTP/HOTP generator with full `otpauth://` and `steam://` support.
+/// TOTP generator with `otpauth://totp/`, `otpauth://steam/` and `steam://` support.
 ///
 /// Accepts either a raw Base32 secret or a full otpauth URI and honours the
 /// `algorithm` (SHA1/256/512), `digits`, and `period` parameters, plus Steam Guard.
+///
+/// Counter-based `otpauth://hotp/` is rejected rather than generated: HOTP needs persistent
+/// per-item counter state that lives outside a stateless generator.
 final class TOTPService {
     static let shared = TOTPService()
 
@@ -62,6 +65,12 @@ final class TOTPService {
             let items = comps.queryItems ?? []
             func q(_ name: String) -> String? { items.first { $0.name.lowercased() == name }?.value }
 
+            // otpauth://hotp/ is counter-based: the code depends on a counter that has to be
+            // stored and incremented on every use, which this generator has nowhere to keep.
+            // Treating it as TOTP produced a well-formed but wrong code that the user would
+            // type and have rejected; refusing is the honest answer until a counter store
+            // exists.
+            guard comps.host?.lowercased() != "hotp" else { return nil }
             guard let secretParam = q("secret"), let key = base32Decode(secretParam) else { return nil }
             let rawDigits = q("digits").flatMap(Int.init) ?? 6
             guard (5...10).contains(rawDigits) else { return nil }

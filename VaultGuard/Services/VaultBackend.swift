@@ -3,13 +3,13 @@ import Security
 
 // MARK: - Vault Backend Abstraction
 //
-// И серверный Bitwarden/Vaultwarden, и локальный KeePass (.kdbx) отдают один и тот же
-// `DecryptedVault`. Всё выше backend (публикация vault, фильтры, sidebar, детальные экраны)
-// не зависит от источника данных.
+// A Bitwarden/Vaultwarden server and a local KeePass (.kdbx) file both produce the same
+// `DecryptedVault`. Everything above the backend (vault publishing, filters, sidebar, detail
+// screens) is independent of where the data came from.
 //
-// `VaultKind` объявлен в `Account.swift` (хранится в `Account.kind`).
+// `VaultKind` is declared in `Account.swift` (stored in `Account.kind`).
 
-/// Ошибки слоя backend, общие для всех источников.
+/// Backend-layer errors, shared by every data source.
 enum VaultBackendError: LocalizedError {
     case notImplemented
     case readOnly
@@ -30,7 +30,7 @@ enum VaultBackendError: LocalizedError {
     }
 }
 
-/// Абстракция источника данных хранилища (операции чтения).
+/// Abstraction over a vault data source (read operations).
 protocol VaultBackend: AnyObject {
     var kind: VaultKind { get }
     var isReadOnly: Bool { get }
@@ -42,11 +42,11 @@ extension VaultBackend {
     func reload() async throws -> DecryptedVault { try await load() }
 }
 
-/// KeePass-бэкенд: держит байты `.kdbx` + учётные данные. На открытии один раз
-/// расшифровывает контейнер и строит редактируемый `XMLDocument` (protected-значения в
-/// открытом виде). `load()` маппит этот документ в `DecryptedVault`; методы записи правят
-/// DOM; `serialize()` пересобирает валидный KDBX 4 (`KDBXWriter`). Запись файла на диск —
-/// ответственность `AppState` (он владеет security-scoped bookmark).
+/// KeePass backend: holds the `.kdbx` bytes plus the credentials. On open it decrypts the
+/// container once and builds an editable `XMLDocument` whose protected values hold plaintext.
+/// `load()` maps that document into a `DecryptedVault`; the write methods edit the DOM;
+/// `serialize()` rebuilds a valid KDBX 4 file (`KDBXWriter`). Writing the file to disk is
+/// `AppState`'s job — it owns the security-scoped bookmark.
 final class KeePassBackend: VaultBackend {
     let kind: VaultKind = .keepass
     let isReadOnly: Bool = false
@@ -78,34 +78,101 @@ final class KeePassBackend: VaultBackend {
     // MARK: Read
 
     func load() async throws -> DecryptedVault {
+        try currentVault()
+    }
+
+    /// The vault as the document holds it right now, synchronously.
+    ///
+    /// For re-reading after an edit, where the document is already decrypted and cached and
+    /// there is no KDF to run. It must run on the thread that edits the document: `load()` is a
+    /// nonisolated async function, and when called after a save it read the DOM off the main
+    /// thread while the next edit could be landing on it.
+    func currentVault() throws -> DecryptedVault {
         let document = try editableDocument()
         return KDBXVaultMapper.map(xml: document.xmlData, stream: nil, binaries: binaries)
     }
 
-    /// Build a fresh KDBX 4 file from the current document (re-encrypts Protected values).
+    // MARK: Saving
+
+    /// Everything a save needs, captured at one instant.
+    ///
+    /// A save runs the file's KDF twice — once to encrypt, once to verify the result opens —
+    /// and with a real Argon2 profile that is seconds of work. It has to happen off the main
+    /// thread, but this backend's document is mutable and edited on the main thread, so it
+    /// cannot be serialized there while an edit might land. A snapshot is taken instead: the
+    /// document is copied, everything else is a value, and the copy belongs to the snapshot
+    /// alone.
+    ///
+    /// `@unchecked Sendable` because `XMLDocument` is not `Sendable`. It is safe here only
+    /// because the document is a private copy that nothing else references once the snapshot
+    /// is made; ownership passes to whichever task holds the snapshot.
+    struct SaveSnapshot: @unchecked Sendable {
+        fileprivate let document: XMLDocument
+        fileprivate let passwordSHA256: Data?
+        fileprivate let keyfile: Data?
+        fileprivate let profile: KDBXProfile
+        fileprivate let binaries: [Data]
+        /// The entries the written file must contain, fixed at snapshot time so verification
+        /// compares against what was saved rather than against whatever the document holds by
+        /// the time the check runs.
+        fileprivate let expectedEntryIds: Set<String>
+    }
+
+    /// Capture the current state for a save. Cheap — a copy of the XML — and meant to be called
+    /// on the thread that edits the document, before any suspension.
+    func makeSaveSnapshot(profileOverride: KDBXProfile? = nil) throws -> SaveSnapshot {
+        let document = try editableDocument()
+        guard let copy = document.copy() as? XMLDocument else { throw VaultBackendError.fileUnavailable }
+        return SaveSnapshot(document: copy, passwordSHA256: passwordSHA256, keyfile: keyfile,
+                            profile: profileOverride ?? profile, binaries: binaries,
+                            expectedEntryIds: try currentEntryIds())
+    }
+
+    /// Encrypt a snapshot into a KDBX file. Pure: touches no backend state, so it can run on
+    /// any thread.
+    static func build(_ snapshot: SaveSnapshot) throws -> Data {
+        try KDBXWriter.build(plaintextXML: snapshot.document, passwordSHA256: snapshot.passwordSHA256,
+                             keyfile: snapshot.keyfile, profile: snapshot.profile, binaries: snapshot.binaries)
+    }
+
+    /// Check that written bytes open with the snapshot's credentials and hold exactly the
+    /// entries it held. Pure, like `build`.
+    static func verify(_ data: Data, against snapshot: SaveSnapshot) throws {
+        let db = try KDBXReader.unlock(data: data, passwordSHA256: snapshot.passwordSHA256,
+                                       keyfile: snapshot.keyfile)
+        guard let stream = KDBXProtectedStream(streamID: db.innerStreamID, key: db.innerStreamKey) else {
+            throw KDBXError.badInnerStream
+        }
+        guard db.binaries.count == snapshot.binaries.count else { throw VaultBackendError.verifyFailed }
+        let vault = KDBXVaultMapper.map(xml: db.xml, stream: stream)
+        guard Set(vault.ciphers.map { $0.id }) == snapshot.expectedEntryIds else {
+            throw VaultBackendError.verifyFailed
+        }
+    }
+
     /// Build a fresh KDBX file from the current document, reproducing the original format
     /// profile (version / cipher / KDF) and attachments. `profileOverride` lets tests force a
     /// light KDF; production passes nil to preserve the file's own profile.
+    ///
+    /// Synchronous convenience over `makeSaveSnapshot` + `build`, kept for tests. The app saves
+    /// through `AppState.writeKeePassToDisk`, which runs `build` off the main thread.
     func serialize(profileOverride: KDBXProfile? = nil) throws -> Data {
-        let document = try editableDocument()
-        return try KDBXWriter.build(plaintextXML: document, passwordSHA256: passwordSHA256, keyfile: keyfile,
-                                    profile: profileOverride ?? profile, binaries: binaries)
+        try Self.build(try makeSaveSnapshot(profileOverride: profileOverride))
     }
 
     /// Verify a freshly serialized (or just-written) file actually opens with our credentials
     /// and contains exactly the entries we currently hold. Throws `verifyFailed` on any mismatch.
-    /// Used by the save path to guarantee we never replace a good file with a broken one.
+    /// Synchronous convenience over `verify(_:against:)`, kept for tests.
     func verifyRoundTrip(_ data: Data) throws {
-        let db = try KDBXReader.unlock(data: data, passwordSHA256: passwordSHA256, keyfile: keyfile)
-        guard let stream = KDBXProtectedStream(streamID: db.innerStreamID, key: db.innerStreamKey) else {
-            throw KDBXError.badInnerStream
-        }
-        guard db.binaries.count == binaries.count else { throw VaultBackendError.verifyFailed }
-        let vault = KDBXVaultMapper.map(xml: db.xml, stream: stream)
-        let produced = Set(vault.ciphers.map { $0.id })
-        let expected = try currentEntryIds()
-        guard produced == expected else { throw VaultBackendError.verifyFailed }
+        try Self.verify(data, against: try makeSaveSnapshot())
     }
+
+    /// Major KDBX version of the file as it was read from disk (`profile` is captured in
+    /// `editableDocument()`). `serialize()` always emits KDBX 4 — the writer implements only
+    /// the v4 container — so a value below 4 means the next save converts the file's format.
+    /// Stays at the original value for the whole session: `profile` is not re-read after the
+    /// document is cached.
+    var onDiskVersionMajor: UInt16 { profile.versionMajor }
 
     /// Features in the current document that the writer would NOT preserve on save (today:
     /// binary attachments). Empty means saving is lossless. The save path refuses to write
@@ -306,7 +373,11 @@ final class KeePassBackend: VaultBackend {
         guard let stream = KDBXProtectedStream(streamID: db.innerStreamID, key: db.innerStreamKey) else {
             throw KDBXError.badInnerStream
         }
-        let d = try KDBXEditor.makeEditable(xml: db.xml, stream: stream)
+        // KDBX 3 keeps attachments in the XML and the reader has just lifted them into
+        // `db.binaries`; the copy left behind in the document is dead weight once this is
+        // saved as KDBX 4.
+        let d = try KDBXEditor.makeEditable(xml: db.xml, stream: stream,
+                                            removeLegacyBinaryPool: db.profile.versionMajor < 4)
         binaries = db.binaries
         profile = db.profile
         doc = d
@@ -444,6 +515,9 @@ final class KeePassBackend: VaultBackend {
         history.addChild(snapshot)
         let items = history.elements(forName: "Entry")
         if items.count > 10 {
+            // Removing by index invalidates the indices of everything after it, so the
+            // oldest-first slice is re-sorted to descending index and removed from the back
+            // forward. Each removal then only shifts nodes we have already dealt with.
             for e in items.prefix(items.count - 10).sorted(by: { $0.index > $1.index }) {
                 history.removeChild(at: e.index)
             }

@@ -1,21 +1,23 @@
 import Foundation
 import CommonCrypto
 import CryptoKit
-import Argon2Swift
 
 // MARK: - KeePass key derivation
 //
-// KDBX поддерживает два KDF:
-// - AES-KDF (KDBX 3.1): `rounds` раз прогнать 32-байтный составной ключ через AES-256-ECB
-//   с ключом = transform seed, затем SHA-256.
-// - Argon2 (KDBX 4): Argon2d/Argon2id. Используется уже имеющийся `Argon2Swift`
-//   (проверено по исходнику ревизии: есть параметры `type` и `version`). Параметр KDBX `M`
-//   задаётся в БАЙТАХ и здесь конвертируется в KiB для библиотеки.
+// KDBX supports two KDFs:
+// - AES-KDF (KDBX 3.1): run the 32-byte composite key through AES-256-ECB `rounds` times
+//   with the transform seed as the key, then SHA-256 the result.
+// - Argon2 (KDBX 4): Argon2d/Argon2id, via `Argon2KDF` over the reference implementation
+//   vendored in `Packages/Argon2`. The KDBX `M` parameter is given in BYTES and is converted
+//   to KiB for the library here.
 //
-// Ограничение: Argon2Swift не пробрасывает Argon2 secret (K) / associated data (A).
-// Стандартные файлы KeePass/KeePassXC их не используют; при непустых K/A бросаем ошибку.
+// Limitation: a KDBX file may carry an Argon2 secret (K) or associated data (A). The library
+// supports both through `argon2_ctx`, but `Argon2KDF` goes through `argon2_hash`, which has no
+// parameters for them. Standard KeePass and KeePassXC files never set either, so a non-empty
+// K or A throws rather than being silently ignored — ignoring it would derive a different key
+// and report the password as wrong.
 //
-// Корректность проверяется в `VaultGuardTests/KeePassCryptoTests.swift`.
+// Correctness is covered by `VaultGuardTests/KeePassCryptoTests.swift`.
 
 enum KeePassKDFError: LocalizedError {
     case aesFailed(Int32)
@@ -138,20 +140,18 @@ enum KeePassKDF {
         guard secret.isEmpty, associatedData.isEmpty else {
             throw KeePassKDFError.unsupportedArgon2SecretOrAD
         }
-        let type: Argon2Type = (variant == .d) ? .d : .id
-        let ver: Argon2Version = (version == 0x10) ? .V10 : .V13
-        let memKiB = Int(memoryBytes / 1024)
+        let kind: Argon2KDF.Variant = (variant == .d) ? .d : .id
+        let ver: Argon2KDF.Version = (version == 0x10) ? .v10 : .v13
+        // KDBX stores M in bytes; the library takes KiB. Values past UInt32 are not a real
+        // KeePass file, and truncating them would derive the wrong key silently.
+        guard let t = UInt32(exactly: iterations),
+              let m = UInt32(exactly: memoryBytes / 1024) else {
+            throw KeePassKDFError.argon2("parameters out of range: iterations \(iterations), memory \(memoryBytes) bytes")
+        }
         do {
-            let res = try Argon2Swift.hashPasswordBytes(
-                password: compositeKey,
-                salt: Salt(bytes: salt),
-                iterations: Int(iterations),
-                memory: memKiB,
-                parallelism: Int(parallelism),
-                length: 32,
-                type: type,
-                version: ver)
-            return res.hashData()
+            return try Argon2KDF.hash(password: compositeKey, salt: salt, iterations: t,
+                                      memoryKiB: m, parallelism: parallelism,
+                                      length: 32, variant: kind, version: ver)
         } catch {
             throw KeePassKDFError.argon2(String(describing: error))
         }

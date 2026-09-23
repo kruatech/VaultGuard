@@ -61,7 +61,10 @@ extension CredentialProviderViewController {
               let key = try? P256.Signing.PrivateKey(rawRepresentation: cred.privateKey) else {
             passkeyCancel(.credentialIdentityNotFound); return
         }
-        let counter = store.bumpCounter(credentialId: credentialID, context: context)
+        guard let counter = store.bumpCounter(credentialId: credentialID, context: context) else {
+            // The counter could not be advanced, so there is no value that is safe to sign.
+            passkeyCancel(.failed); return
+        }
         let authData = Fido2.authenticatorData(
             rpId: cred.rpId,
             flags: Fido2.Flags.userPresent | Fido2.Flags.userVerified,
@@ -96,7 +99,13 @@ extension CredentialProviderViewController {
             // CSPRNG failure — never register a credential with a predictable id.
             passkeyCancel(.failed); return
         }
-        PasskeyStore.forAccount(accountId).add(cred, context: context)
+        do {
+            try PasskeyStore.forAccount(accountId).add(cred, context: context)
+        } catch {
+            // The existing credentials could not be read, so saving this one would replace
+            // them. Fail the registration instead: the relying party will offer to try again.
+            passkeyCancel(.failed); return
+        }
 
         let (x, y) = Fido2.coordinates(key.publicKey)
         let cose = Fido2.coseKey(x: x, y: y)

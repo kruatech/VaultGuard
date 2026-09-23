@@ -2,19 +2,19 @@ import Foundation
 
 // MARK: - KeePass stream ciphers
 //
-// Чистые Swift-реализации ChaCha20 и Salsa20: в проекте их нет, а CryptoKit даёт лишь
-// AEAD ChaCha20Poly1305, не «сырой» поток. Используются ТОЛЬКО на KeePass-пути:
+// Pure-Swift ChaCha20 and Salsa20: nothing in the project provides them, and CryptoKit only
+// offers AEAD ChaCha20Poly1305 rather than a raw keystream. Used ONLY on the KeePass path:
 //
-// - `ChaCha20Cipher` — RFC 8439 (12-байтный nonce, 32-битный блочный счётчик). Inner
-//   random-stream KDBX 4 и опциональный outer-cipher KDBX 4.
-// - `Salsa20Cipher` — Salsa20/20 (256-бит ключ, 64-бит nonce, 64-бит счётчик). Inner
-//   random-stream KDBX 3.1 (KeePass использует фиксированный IV E830094B97205D2A).
+// - `ChaCha20Cipher` — RFC 8439 (12-byte nonce, 32-bit block counter). The KDBX 4 inner
+//   random stream and the optional KDBX 4 outer cipher.
+// - `Salsa20Cipher` — Salsa20/20 (256-bit key, 64-bit nonce, 64-bit counter). The KDBX 3.1
+//   inner random stream (KeePass uses the fixed IV E830094B97205D2A).
 //
-// ВАЖНО: гамма НЕПРЕРЫВНА между вызовами process(_:). KeePass inner-stream расходует один
-// общий keystream на все Protected-значения подряд, поэтому остаток последнего 64-байтного
-// блока буферизуется и используется следующим вызовом (а не начинается заново с границы
-// блока). Проверено в KeePassCryptoTests (одиночные вызовы) и в KDBXReaderTests
-// (последовательные значения).
+// IMPORTANT: the keystream is CONTINUOUS across calls to process(_:). The KeePass inner
+// stream spends one shared keystream over all Protected values in order, so the remainder of
+// the last 64-byte block is buffered and consumed by the next call rather than restarting at
+// a block boundary. Covered by KeePassCryptoTests (single calls) and KDBXReaderTests
+// (consecutive values).
 
 @inline(__always) private func rotl32(_ x: UInt32, _ n: UInt32) -> UInt32 {
     (x << n) | (x >> (32 &- n))

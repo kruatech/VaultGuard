@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var textScale: TextScaleManager
     @EnvironmentObject var accounts: AccountManager
     @EnvironmentObject var localization: LocalizationManager
 
@@ -15,6 +16,10 @@ struct SettingsView: View {
     @AppStorage("appTheme") private var appTheme = "system"
 
     @State private var connectionName: String = ""
+    /// The snapshot awaiting confirmation before it is deleted.
+    @State private var backupPendingDeletion: URL?
+    /// Bumped after a deletion so the snapshot list, read from disk, is redrawn.
+    @State private var backupsRevision = 0
     @State private var masterPasswordSaved = false
     @State private var certTrusted = false
     @State private var showExportSheet = false
@@ -203,6 +208,29 @@ struct SettingsView: View {
                 Toggle(L10n.Settings.showFavicons.localized, isOn: $showFavicons).handCursor()
             }
 
+            Section {
+                HStack(spacing: VGSpacing.l) {
+                    Text("A").font(VGFont.caption).foregroundColor(VGColor.secondary).vgDecorative()
+                    Slider(value: $textScale.scale,
+                           in: TextScaleManager.minimum...TextScaleManager.maximum,
+                           step: TextScaleManager.step)
+                        .accessibilityLabel(Text(L10n.Settings.textSize.localized))
+                        .accessibilityValue(Text(textScale.percentLabel))
+                    Text("A").font(VGFont.title2).foregroundColor(VGColor.secondary).vgDecorative()
+                    Text(textScale.percentLabel)
+                        .font(VGFont.labelMono).foregroundColor(VGColor.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                    Button(L10n.Settings.textReset.localized) { textScale.reset() }
+                        .buttonStyle(.link).handCursor()
+                }
+            } header: {
+                Text(L10n.Settings.textSize.localized)
+            } footer: {
+                Text(L10n.Settings.textSizeHint.localized)
+                    .font(VGFont.caption).foregroundColor(VGColor.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section(L10n.Settings.language.localized) {
                 Picker(L10n.Settings.language.localized, selection: $localization.currentLanguage) {
                     ForEach(AppLanguage.allCases) { lang in
@@ -219,6 +247,17 @@ struct SettingsView: View {
 
     private var dataTab: some View {
         Form {
+            if appState.isBatchRunning {
+                Section {
+                    VStack(alignment: .leading, spacing: VGSpacing.s) {
+                        ProgressView(value: appState.batchProgress)
+                        Text("\(appState.batchDone) / \(appState.batchTotal)")
+                            .font(VGFont.caption).foregroundColor(VGColor.secondary)
+                            .accessibilityLabel(Text(L10n.Migration.importTitle.localized))
+                            .accessibilityValue(Text("\(appState.batchDone) / \(appState.batchTotal)"))
+                    }
+                }
+            }
             if appState.activeVaultKind == .bitwarden {
                 Section {
                     Button(action: { exportPassword = ""; exportConfirm = ""; showExportSheet = true }) {
@@ -244,6 +283,12 @@ struct SettingsView: View {
                     Text(L10n.Migration.importJSONHint.localized).font(VGFont.caption).foregroundColor(VGColor.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    Button(action: { import1PUX() }) {
+                        Label(L10n.Migration.import1PUXButton.localized, systemImage: "lock.rotation").font(VGFont.labelMedium)
+                    }.buttonStyle(.bordered).handCursor()
+                    Text(L10n.Migration.import1PUXHint.localized).font(VGFont.caption).foregroundColor(VGColor.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
                     Button(action: { importCSV() }) {
                         Label(L10n.Migration.importCSVButton.localized, systemImage: "tablecells").font(VGFont.labelMedium)
                     }.buttonStyle(.bordered).handCursor()
@@ -251,8 +296,82 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            if appState.activeVaultKind == .keepass {
+                Section {
+                    Button(action: { exportBitwardenJSON() }) {
+                        Label(L10n.Migration.exportJSONButton.localized, systemImage: "square.and.arrow.up.on.square")
+                            .font(VGFont.labelMedium)
+                    }.buttonStyle(.bordered).handCursor()
+                } header: {
+                    Text(L10n.Migration.exportJSONTitle.localized)
+                } footer: {
+                    Text(L10n.Migration.exportJSONHint.localized).font(VGFont.caption).foregroundColor(VGColor.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Section {
+                    let backups = appState.keePassBackups()
+                    if backups.isEmpty {
+                        Text(L10n.Backup.empty.localized).font(VGFont.caption).foregroundColor(VGColor.secondary)
+                    } else {
+                        ForEach(backups, id: \.self) { url in
+                            HStack {
+                                Text(url.deletingPathExtension().deletingPathExtension().lastPathComponent)
+                                    .font(VGFont.labelMono).lineLimit(1).truncationMode(.middle)
+                                Spacer()
+                                Button(L10n.Backup.saveCopy.localized) { saveBackupCopy(url) }
+                                    .buttonStyle(.link).handCursor()
+                                Button(role: .destructive) { backupPendingDeletion = url } label: {
+                                    Image(systemName: "trash").font(VGFont.body)
+                                }
+                                .buttonStyle(.borderless).handCursor()
+                                .vgHelp(L10n.Backup.delete.localized)
+                            }
+                        }
+                    }
+                } header: {
+                    Text(L10n.Backup.title.localized)
+                } footer: {
+                    Text(L10n.Backup.hint.localized).font(VGFont.caption).foregroundColor(VGColor.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // The listing is read from disk in the body; this makes a deletion redraw it.
+                .id(backupsRevision)
+                .confirmationDialog(
+                    L10n.Backup.deleteConfirm.localized,
+                    isPresented: Binding(get: { backupPendingDeletion != nil },
+                                         set: { if !$0 { backupPendingDeletion = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button(L10n.delete.localized, role: .destructive) {
+                        if let url = backupPendingDeletion { appState.deleteKeePassBackup(url) }
+                        backupPendingDeletion = nil
+                        backupsRevision += 1
+                    }
+                } message: {
+                    Text(L10n.Backup.deleteMessage.localized)
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    /// Write the open vault out as an unencrypted Bitwarden `.json`. The footer above the
+    /// button carries the plaintext warning, so the panel itself only picks a location.
+    private func exportBitwardenJSON() {
+        let panel = NSSavePanel()
+        if let t = UTType(filenameExtension: "json") { panel.allowedContentTypes = [t] }
+        panel.nameFieldStringValue = "vaultguard-export.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        appState.exportVaultAsBitwardenJSON(to: url)
+    }
+
+    private func saveBackupCopy(_ backup: URL) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = backup.deletingPathExtension().lastPathComponent
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        appState.exportKeePassBackup(backup, to: url)
     }
 
     // MARK: - About tab
@@ -304,6 +423,17 @@ struct SettingsView: View {
         if let t = UTType(filenameExtension: "json") { panel.allowedContentTypes = [t] }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await appState.importBitwardenJSONFile(fileURL: url) }
+    }
+
+    private func import1PUX() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        if let t = UTType(filenameExtension: "1pux") { panel.allowedContentTypes = [t] }
+        // A .1pux is a ZIP; some systems will not recognise the extension as its own type, so
+        // the panel is left able to show any file rather than showing nothing.
+        panel.allowsOtherFileTypes = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await appState.import1PUXFile(fileURL: url) }
     }
 
     private func importCSV() {
@@ -369,7 +499,7 @@ struct SettingsView: View {
                 }.buttonStyle(.plain).handCursor()
                 if importKeyfileURL != nil {
                     Button(action: { importKeyfileURL = nil }) { Image(systemName: "xmark.circle.fill").foregroundColor(VGColor.secondary) }
-                        .buttonStyle(.plain).handCursor()
+                        .buttonStyle(.plain).handCursor().vgHelp(L10n.clear.localized)
                 }
             }
             SecureField(L10n.Auth.masterPasswordPlaceholder.localized, text: $importPassword).textFieldStyle(.roundedBorder)

@@ -16,8 +16,10 @@ extension AppState {
     /// Verify the entered master password against the pending reprompt and, on
     /// success, run the deferred action. Returns false on an incorrect password.
     @discardableResult
-    func submitReprompt(_ password: String) -> Bool {
-        guard let req = pendingReprompt, verifyMasterPassword(password) else { return false }
+    func submitReprompt(_ password: String) async -> Bool {
+        guard let req = pendingReprompt, await verifyMasterPassword(password) else { return false }
+        // The sheet may have been dismissed, or a different item reprompted, while the KDF ran.
+        guard pendingReprompt?.cipherId == req.cipherId else { return false }
         repromptVerifiedCipherIds.insert(req.cipherId)
         let action = req.onVerified
         pendingReprompt = nil
@@ -30,20 +32,28 @@ extension AppState {
     /// Re-derive the master-password hash from the entered password (using a
     /// throwaway crypto instance so the live session keys are untouched) and
     /// compare it in constant time to the hash from the active session.
-    func verifyMasterPassword(_ password: String) -> Bool {
+    ///
+    /// The derivation runs off the main actor for the same reason as at login: it is the full
+    /// master-password KDF, and running it here froze the window while the sheet waited. The
+    /// probe is a throwaway instance that nothing else holds, so moving it is safe.
+    func verifyMasterPassword(_ password: String) async -> Bool {
         guard !password.isEmpty,
               let store = activeStore,
               let email = store.email,
               let iter = store.kdfIterations,
               let currentHash = crypto.passwordHash else { return false }
-        let probe = CryptoService()
-        defer { probe.clearKeys() }
-        do {
-            try probe.deriveKeys(password: password, email: email, kdf: store.kdfType ?? 0,
-                                 kdfIterations: iter, kdfMemory: store.kdfMemory, kdfParallelism: store.kdfParallelism)
-            guard let candidate = probe.passwordHash else { return false }
-            return AppState.constantTimeEqual(candidate, currentHash)
-        } catch { return false }
+        let kdf = store.kdfType ?? 0, memory = store.kdfMemory, parallelism = store.kdfParallelism
+        let candidate: String? = await Task.detached(priority: .userInitiated) {
+            let probe = CryptoService()
+            defer { probe.clearKeys() }
+            do {
+                try probe.deriveKeys(password: password, email: email, kdf: kdf,
+                                     kdfIterations: iter, kdfMemory: memory, kdfParallelism: parallelism)
+                return probe.passwordHash
+            } catch { return nil }
+        }.value
+        guard let candidate else { return false }
+        return AppState.constantTimeEqual(candidate, currentHash)
     }
 
     private static func constantTimeEqual(_ a: String, _ b: String) -> Bool {

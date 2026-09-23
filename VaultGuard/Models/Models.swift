@@ -165,6 +165,17 @@ struct VaultCipher: Identifiable, Codable {
     var favorite: Bool; var reprompt: Int?
     var creationDate: Date?; var revisionDate: Date?; var deletedDate: Date?
     var keepassIcon: KeePassIconRef? = nil
+    /// KeePass `<Times><ExpiryTime>`, present only when the entry's `<Expires>` is true.
+    /// Bitwarden has no equivalent, so it stays nil for server vaults.
+    var keepassExpiry: Date? = nil
+    /// KeePass 2.x `<Tags>`, already split. Nil for server vaults.
+    var keepassTags: [String]? = nil
+
+    /// True when the entry carries an expiry date that has passed.
+    var isExpired: Bool {
+        guard let e = keepassExpiry else { return false }
+        return e <= Date()
+    }
 
     var displayUsername: String {
         switch type {

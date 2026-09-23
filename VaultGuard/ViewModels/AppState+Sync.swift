@@ -5,9 +5,11 @@ extension AppState {
 
     func syncVault() async throws {
         // KeePass: re-read the in-memory file via the active backend; no server/cache.
+        // `currentVault()` rather than `load()`: the document is already decrypted, and reading
+        // it here keeps the read on the main actor, where the document is edited.
         if activeVaultKind == .keepass {
             guard let backend = keePassBackend else { return }
-            applyDecryptedVault(try await backend.load())
+            applyDecryptedVault(try backend.currentVault())
             return
         }
 
@@ -39,9 +41,9 @@ extension AppState {
     @discardableResult
     private func applySync(_ data: Data) async -> Bool {
         let crypto = self.crypto
-        let noName = "misc.noName".localized
-        let noOrgKey = "misc.noOrgKey".localized
-        let undecryptable = "misc.undecryptable".localized
+        let noName = L10n.Misc.noName.localized
+        let noOrgKey = L10n.Misc.noOrgKey.localized
+        let undecryptable = L10n.Misc.undecryptable.localized
 
         let result = await Task.detached(priority: .userInitiated) {
             VaultDecryptor.decrypt(data: data, crypto: crypto, noName: noName, noOrgKey: noOrgKey, undecryptable: undecryptable)

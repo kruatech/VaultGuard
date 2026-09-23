@@ -14,12 +14,11 @@ authors. These names are used only to describe compatibility. See TRADEMARKS.md.
 
 Third-party components (full license texts in THIRD_PARTY_LICENSES):
 
-- Argon2Swift — MIT License. Copyright 2020 Tejas Mehta.
-  https://github.com/tmthecoder/Argon2Swift
-- Argon2 reference C implementation (phc-winner-argon2), wrapped by Argon2Swift and
-  pulled in transitively — dual-licensed under CC0 1.0 Universal or the Apache
-  License, Version 2.0, at your option. Copyright 2015 Daniel Dinu,
-  Dmitry Khovratovich, Jean-Philippe Aumasson, and Samuel Neves.
+- Argon2 reference C implementation (phc-winner-argon2), vendored unmodified in
+  Packages/Argon2 — dual-licensed under CC0 1.0 Universal or the Apache License,
+  Version 2.0, at your option; used here under the Apache License 2.0.
+  Copyright 2015 Daniel Dinu, Dmitry Khovratovich, Jean-Philippe Aumasson, and
+  Samuel Neves. https://github.com/P-H-C/phc-winner-argon2
 
 Any sample data bundled for review or documentation (for example, a sample
 KeePass database) contains only fictitious test data and no real credentials.

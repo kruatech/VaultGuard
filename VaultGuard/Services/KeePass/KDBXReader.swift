@@ -24,6 +24,7 @@ enum KDBXError: LocalizedError {
     case missingHeaderField(UInt8)
     case decompressFailed
     case badInnerStream
+    case protectedValueCorrupted
     case randomGenerationFailed
 
     var errorDescription: String? {
@@ -37,6 +38,7 @@ enum KDBXError: LocalizedError {
         case .unsupportedCipher(let u): return "Unsupported cipher (\(u))"
         case .unsupportedKDF(let u): return "Unsupported KDF (\(u))"
         case .missingHeaderField(let id): return "Missing KDBX header field \(id)"
+        case .protectedValueCorrupted: return "A protected value in the database could not be decoded"
         case .decompressFailed: return "Failed to decompress the database"
         case .badInnerStream: return "Unsupported inner random stream"
         case .randomGenerationFailed: return "Secure random generation failed"
@@ -286,7 +288,48 @@ enum KDBXReader {
         let profileV3 = KDBXProfile(versionMajor: 3, versionMinor: minorV3, cipher: .aesCBC,
                                     compression: le32(compRaw), kdf: .aesKdf(rounds: le64(roundsRaw)))
         return KDBXDatabase(xml: xml, innerStreamID: innerID,
-                            innerStreamKey: Data(protKeyRaw), binaries: [], profile: profileV3)
+                            innerStreamKey: Data(protKeyRaw),
+                            binaries: metaBinaries(in: xml), profile: profileV3)
+    }
+
+    /// Attachments of a KDBX 3 database, lifted out of the XML into the same inner-header
+    /// layout KDBX 4 uses.
+    ///
+    /// The two versions store the bytes in different places: KDBX 4 has a binary pool in the
+    /// inner header, KDBX 3 keeps them in `<Meta><Binaries><Binary ID="N">` as base64, with
+    /// entries pointing at them through `<Binary><Value Ref="N"/>`. Nothing downstream read
+    /// the KDBX 3 location, so a v3 database's attachments appeared in the UI with a size of
+    /// zero and could not be opened. Normalising here means the mapper, the detail view and
+    /// the writer keep working on one representation instead of learning about a second.
+    ///
+    /// `Ref` is an index into the returned array, so it is built by ID with gaps filled: IDs
+    /// are not promised to be contiguous or ordered.
+    ///
+    /// This costs one extra parse of the XML, on the KDBX 3 open path only.
+    private static func metaBinaries(in xml: Data) -> [Data] {
+        guard let doc = try? XMLDocument(data: xml, options: [.nodePreserveWhitespace]),
+              let nodes = try? doc.nodes(forXPath: "//Meta/Binaries/Binary"), !nodes.isEmpty
+        else { return [] }
+
+        var byId: [Int: Data] = [:]
+        for node in nodes {
+            guard let el = node as? XMLElement,
+                  let idRaw = el.attribute(forName: "ID")?.stringValue,
+                  let id = Int(idRaw), id >= 0,
+                  let b64 = el.stringValue,
+                  var bytes = Data(base64Encoded: b64, options: [.ignoreUnknownCharacters])
+            else { continue }
+            // KeePass gzips a binary when it is worth it and says so on the element.
+            if el.attribute(forName: "Compressed")?.stringValue?.lowercased() == "true" {
+                guard let inflated = try? gunzip(bytes) else { continue }
+                bytes = inflated
+            }
+            // Inner-header item layout: [flags:1][data:N]. Flag 0 = not memory-protected,
+            // which is what a KDBX 3 binary is.
+            byId[id] = Data([0x00]) + bytes
+        }
+        guard let maxId = byId.keys.max() else { return [] }
+        return (0...maxId).map { byId[$0] ?? Data([0x00]) }
     }
 
     /// KDBX 3.1 hashed-block stream: repeated [index:u32][SHA256:32][size:u32][data];
@@ -428,6 +471,10 @@ enum KDBXReader {
 
     // MARK: gzip
 
+    /// Hard ceiling on a single gunzip output. Far above any real KeePass database, far below
+    /// what a decompression bomb needs to hurt.
+    private static let maxDecompressedSize = 256 * 1024 * 1024
+
     private static func gunzip(_ data: Data) throws -> Data {
         let b = [UInt8](data)
         guard b.count > 18, b[0] == 0x1f, b[1] == 0x8b, b[2] == 0x08 else { throw KDBXError.decompressFailed }
@@ -444,7 +491,11 @@ enum KDBXReader {
         let deflate = Data(b[idx..<(b.count - 8)])
         let isize = Int(b[b.count - 4]) | (Int(b[b.count - 3]) << 8)
             | (Int(b[b.count - 2]) << 16) | (Int(b[b.count - 1]) << 24)
-        let dstCap = isize > 0 ? isize : max(deflate.count * 8, 1 << 16)
+        // ISIZE comes from the gzip footer of an untrusted file and is the size we are about
+        // to allocate. A crafted .kdbx can declare ~4 GB and make a single open attempt exhaust
+        // memory, so reject anything above the cap before allocating rather than after.
+        guard isize <= maxDecompressedSize else { throw KDBXError.decompressFailed }
+        let dstCap = isize > 0 ? isize : min(max(deflate.count * 8, 1 << 16), maxDecompressedSize)
         let srcLen = deflate.count
         var dst = Data(count: dstCap)
         let n = dst.withUnsafeMutableBytes { (dstRaw: UnsafeMutableRawBufferPointer) -> Int in

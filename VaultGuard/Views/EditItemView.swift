@@ -89,7 +89,7 @@ struct EditItemView: View {
                     Image(systemName: "xmark").font(VGFont.bodyEmphasis).foregroundColor(VGColor.secondary)
                         .frame(width: 26, height: 26).background(VGColor.surface.opacity(0.6)).clipShape(Circle())
                 }
-                .buttonStyle(.plain).handCursor()
+                .buttonStyle(.plain).handCursor().vgHelp(L10n.close.localized)
             }
             .padding(.horizontal, VGSpacing.huge).padding(.top, VGSpacing.xxxl).padding(.bottom, VGSpacing.xl)
 
@@ -205,11 +205,11 @@ struct EditItemView: View {
             Button(action: { isPasswordVisible.toggle() }) {
                 Image(systemName: isPasswordVisible ? "eye.slash" : "eye").font(VGFont.body).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).frame(width: 22, height: 20).contentShape(Rectangle()).handCursor()
-                .help((isPasswordVisible ? L10n.Editor.hide : L10n.Editor.show).localized)
+                .vgHelp((isPasswordVisible ? L10n.Editor.hide : L10n.Editor.show).localized)
             Button(action: { password = appState.generateFromLastTemplate(); isPasswordVisible = true }) {
                 Image(systemName: "arrow.triangle.2.circlepath").font(VGFont.body).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).frame(width: 22, height: 20).contentShape(Rectangle()).handCursor()
-                .help(L10n.Editor.generate.localized)
+                .vgHelp(L10n.Editor.generate.localized)
             Menu {
                 ForEach(appState.passwordTemplates) { t in templateMenuButton(t) }
             } label: {
@@ -314,12 +314,12 @@ struct EditItemView: View {
                     if field.type == .boolean {
                         fieldBox {
                             Menu {
-                                Button("misc.yes".localized) { field.value = "true" }
-                                Button("misc.no".localized) { field.value = "false" }
+                                Button(L10n.Misc.yes.localized) { field.value = "true" }
+                                Button(L10n.Misc.no.localized) { field.value = "false" }
                             } label: {
                                 HStack(spacing: VGSpacing.xs) {
                                     Spacer(minLength: 0)
-                                    Text(field.value == "true" ? "misc.yes".localized : "misc.no".localized)
+                                    Text(field.value == "true" ? L10n.Misc.yes.localized : L10n.Misc.no.localized)
                                         .font(VGFont.body).foregroundColor(VGColor.primary)
                                     Image(systemName: "chevron.up.chevron.down").font(VGFont.caption2).foregroundColor(VGColor.secondary)
                                 }
@@ -359,6 +359,7 @@ struct EditItemView: View {
                     Button(action: { customFields.removeAll(where: { $0.id == field.id }) }) {
                         Image(systemName: "xmark").foregroundColor(VGColor.secondary)
                     }.buttonStyle(.plain).frame(width: 20).handCursor()
+                        .vgHelp(L10n.delete.localized)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -401,11 +402,11 @@ struct EditItemView: View {
             Button(action: { pasteTOTPFromClipboard() }) {
                 Image(systemName: "qrcode").font(VGFont.body).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).frame(width: 20, height: 20).contentShape(Rectangle()).handCursor()
-                .help(L10n.Editor.pasteFromClipboard.localized)
+                .vgHelp(L10n.Editor.pasteFromClipboard.localized)
             Button(action: { loadTOTPQRFromFile() }) {
                 Image(systemName: "folder").font(VGFont.body).foregroundColor(VGColor.secondary)
             }.buttonStyle(.plain).frame(width: 20, height: 20).contentShape(Rectangle()).handCursor()
-                .help(L10n.Editor.loadQRFromFile.localized)
+                .vgHelp(L10n.Editor.loadQRFromFile.localized)
         }
     }
 
@@ -498,7 +499,7 @@ struct EditItemView: View {
         if appState.activeVaultKind == .keepass {
             Section {
                 HStack(spacing: VGSpacing.s) {
-                    Text("editor.icon".localized).font(VGFont.body).foregroundColor(VGColor.primary)
+                    Text(L10n.Editor.icon.localized).font(VGFont.body).foregroundColor(VGColor.primary)
                     Spacer()
                     Image(systemName: iconExpanded ? "chevron.down" : "chevron.right")
                         .font(VGFont.caption).foregroundColor(VGColor.secondary)
@@ -522,6 +523,7 @@ struct EditItemView: View {
         let selected = (keepassIcon == KeePassIconRef.standard(idx))
         return Button(action: { keepassIcon = .standard(idx) }) {
             Image(systemName: KeePassIconRef.sfSymbol(forStandard: idx))
+                .accessibilityLabel(Text("\(L10n.Editor.icon.localized) \(idx)"))
                 .font(VGFont.body)
                 .foregroundColor(selected ? VGColor.onAccent : VGColor.secondary)
                 .frame(width: 32, height: 32)

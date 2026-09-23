@@ -7,6 +7,12 @@ struct AutoFillCredential {
     let user: String
     let password: String
     let uris: [String]
+    /// Normalized hosts of `uris`, resolved once when the cache is opened. Matching used to
+    /// re-parse every URI of every credential on every request; the set of URIs cannot change
+    /// while the extension is running, so the work is done once here instead.
+    let hosts: [String]
+    /// Last change to the source item, when the cache carries it. See `AutoFillRecord`.
+    let revisionDate: Date?
 }
 
 enum AutoFillError: LocalizedError {
@@ -50,7 +56,9 @@ final class AutoFillVault {
         case .records(let records):
             credentials = records.map {
                 AutoFillCredential(recordIdentifier: $0.id, name: $0.name,
-                                   user: $0.user, password: $0.password, uris: $0.uris)
+                                   user: $0.user, password: $0.password, uris: $0.uris,
+                                   hosts: $0.uris.compactMap(Self.host(from:)),
+                                   revisionDate: $0.revisionDate)
             }
         case .missing:
             credentials = []
@@ -69,9 +77,8 @@ final class AutoFillVault {
         let requestHosts = serviceIdentifiers.compactMap { Self.host(from: $0.identifier) }
         guard !requestHosts.isEmpty else { return credentials }
         return credentials.filter { cred in
-            cred.uris.contains { uriStr in
-                guard let credHost = Self.host(from: uriStr) else { return false }
-                return requestHosts.contains { Self.hostMatches(credentialHost: credHost, requestHost: $0) }
+            cred.hosts.contains { credHost in
+                requestHosts.contains { Self.hostMatches(credentialHost: credHost, requestHost: $0) }
             }
         }
     }
@@ -86,31 +93,22 @@ final class AutoFillVault {
         // (matches(for:) would otherwise return the full list for an empty host set).
         guard Self.host(from: identity.serviceIdentifier.identifier) != nil else { return nil }
         let serviceScoped = matches(for: [identity.serviceIdentifier])
-        return serviceScoped.first { $0.user == identity.user }
+        // Several entries can share a host and username with different passwords (an old one
+        // kept around after a rotation, say). Taking the first match handed out whichever
+        // happened to come first in the vault; prefer the most recently updated one. Entries
+        // with no revision date sort oldest, so a dated entry always wins over an undated one.
+        return serviceScoped
+            .filter { $0.user == identity.user }
+            .max { ($0.revisionDate ?? .distantPast) < ($1.revisionDate ?? .distantPast) }
     }
 
-    /// Normalized host from a full URL or a bare-host identifier; nil if unparseable.
+    // Host parsing and matching live in `AutoFillHostMatcher` so the unit-test target can
+    // compile them without the keychain and the cache this type depends on.
     private static func host(from identifier: String) -> String? {
-        var s = identifier.trimmingCharacters(in: .whitespaces)
-        guard !s.isEmpty else { return nil }
-        let lower = s.lowercased()
-        if !lower.hasPrefix("http://") && !lower.hasPrefix("https://") { s = "https://" + s }
-        guard let host = URL(string: s)?.host else { return nil }
-        return normalizeHost(host)
+        AutoFillHostMatcher.host(from: identifier)
     }
 
-    private static func normalizeHost(_ host: String) -> String {
-        var h = host.lowercased()
-        while h.hasSuffix(".") { h.removeLast() }
-        return h
-    }
-
-    /// Exact host match, or one host is a subdomain of the other on a label boundary.
-    /// Rejects look-alikes: evil-example.com and example.com.evil.com never match example.com.
     private static func hostMatches(credentialHost: String, requestHost: String) -> Bool {
-        if credentialHost == requestHost { return true }
-        if requestHost.hasSuffix("." + credentialHost) { return true }
-        if credentialHost.hasSuffix("." + requestHost) { return true }
-        return false
+        AutoFillHostMatcher.hostMatches(credentialHost: credentialHost, requestHost: requestHost)
     }
 }

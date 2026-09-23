@@ -2,24 +2,68 @@ import Foundation
 import AppKit
 
 extension AppState {
+    /// Largest file accepted as an attachment.
+    ///
+    /// Checked before the file is read, because everything after that holds it whole in
+    /// memory: the plaintext, then the ciphertext beside it — two to three times the file at
+    /// peak. On the KeePass side the cost recurs, since attachments live inside the `.kdbx`
+    /// and every later save rewrites the entire database. A limit the server enforces is no
+    /// help here; by the time it answers, the memory has already been spent.
+    static let maxAttachmentBytes = 100 * 1024 * 1024
+
+    /// The file's size without reading it, or nil if it cannot be determined.
+    nonisolated static func attachmentSize(_ url: URL) -> Int? {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
+
+    /// Split files into the ones that fit and the names of those that do not.
+    private func partitionBySize(_ files: [URL]) -> (fitting: [URL], tooLarge: [String]) {
+        var fitting: [URL] = [], tooLarge: [String] = []
+        for file in files {
+            if let size = Self.attachmentSize(file), size > Self.maxAttachmentBytes {
+                tooLarge.append(file.lastPathComponent)
+            } else {
+                fitting.append(file)
+            }
+        }
+        return (fitting, tooLarge)
+    }
+
+    private func reportTooLarge(_ names: [String]) {
+        guard !names.isEmpty else { return }
+        let limitMB = Self.maxAttachmentBytes / (1024 * 1024)
+        showToast(.error(L10n.DragDrop.tooLarge.localized(names.joined(separator: ", "), limitMB)))
+    }
+
     // MARK: - Drag & Drop Attachments
 
     /// Upload files from dropped URLs (files and folders, recursive)
     func uploadDroppedFiles(urls: [URL], toCipher cipher: VaultCipher) async {
         if activeVaultKind == .keepass { await uploadKeePassFiles(urls: urls, toCipher: cipher); return }
-        let allFiles = collectFiles(from: urls)
+        let (allFiles, tooLarge) = partitionBySize(collectFiles(from: urls))
+        reportTooLarge(tooLarge)
         guard !allFiles.isEmpty else { return }
 
         isUploadingAttachments = true
         attachmentUploadProgress = 0
         let total = Double(allFiles.count)
 
+        // Captured once: `lock()` replaces `crypto` rather than mutating it, so an upload
+        // already running keeps the keys it started with instead of reading a wiped instance.
+        let session = crypto
+        let orgId = cipher.organizationId
+
         for (index, fileURL) in allFiles.enumerated() {
             do {
-                let data = try Data(contentsOf: fileURL)
                 let fileName = fileURL.lastPathComponent
-                let (encryptedData, encryptedKey) = try crypto.encryptAttachment(data, orgId: cipher.organizationId)
-                let encFileName = crypto.encrypt(fileName, orgId: cipher.organizationId) ?? fileName
+                // Reading the file and encrypting all of it ran on the main actor, freezing the
+                // window for as long as a large file took. The session is only read here, never
+                // written, so running this off the main thread races with nothing.
+                let (encryptedData, encryptedKey, encFileName) = try await Task.detached(priority: .userInitiated) {
+                    let data = try Data(contentsOf: fileURL)
+                    let (encData, encKey) = try session.encryptAttachment(data, orgId: orgId)
+                    return (encData, encKey, session.encrypt(fileName, orgId: orgId) ?? fileName)
+                }.value
 
                 try await api.uploadAttachment(
                     cipherId: cipher.id,
@@ -126,19 +170,24 @@ extension AppState {
 
     private func uploadKeePassFiles(urls: [URL], toCipher cipher: VaultCipher) async {
         guard let backend = keePassBackend else { return }
-        let files = collectFiles(from: urls)
+        let (files, tooLarge) = partitionBySize(collectFiles(from: urls))
+        reportTooLarge(tooLarge)
         guard !files.isEmpty else { return }
         isUploadingAttachments = true
         attachmentUploadProgress = 0
         let total = Double(files.count)
         do {
             for (index, fileURL) in files.enumerated() {
-                let data = try Data(contentsOf: fileURL)
+                // The read is the slow part and touches nothing shared; the DOM edit below stays
+                // on the main actor with the rest of the backend's use.
+                let data = try await Task.detached(priority: .userInitiated) {
+                    try Data(contentsOf: fileURL)
+                }.value
                 _ = try backend.addAttachment(cipherId: cipher.id, fileName: fileURL.lastPathComponent, data: data)
                 attachmentUploadProgress = Double(index + 1) / total
             }
-            try writeKeePassToDisk(backend)
-            publishKeePass(try await backend.load())
+            try await writeKeePassToDisk(backend)
+            publishKeePass(try backend.currentVault())
             showToast(.info(L10n.DragDrop.uploadComplete.localized))
         } catch {
             showToast(.error(error.localizedDescription))
@@ -151,8 +200,8 @@ extension AppState {
         guard let backend = keePassBackend, let id = attachment.id, let ref = Int(id) else { return }
         do {
             try backend.removeAttachment(cipherId: cipher.id, ref: ref)
-            try writeKeePassToDisk(backend)
-            publishKeePass(try await backend.load())
+            try await writeKeePassToDisk(backend)
+            publishKeePass(try backend.currentVault())
             showToast(.deleted())
         } catch {
             showToast(.error(error.localizedDescription))

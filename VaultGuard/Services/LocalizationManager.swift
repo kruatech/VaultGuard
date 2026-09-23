@@ -38,13 +38,44 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 
 // MARK: - Localization Manager
 
+/// Storage for the selected language.
+///
+/// Deliberately outside the class: `LocalizationManager` is `@MainActor` while
+/// `resolvedBundle` is `nonisolated`, so the latter cannot reach the class's members.
+/// Nothing here is isolated, so both can use it.
+///
+/// The value lives in the App Group container: the AutoFill extension has its own
+/// UserDefaults domain (com.kruatech.vaultguard.autofill) and would never see the
+/// language picked in the app through `.standard`.
+fileprivate enum LangStore {
+    static let key = "appLanguage"
+
+    private static var defaults: UserDefaults { SharedConfig.appGroupDefaults ?? .standard }
+
+    /// Read with a fallback: the value may still sit in `.standard`, left by a build made
+    /// before the move to the shared container.
+    static func read() -> String {
+        defaults.string(forKey: key)
+            ?? UserDefaults.standard.string(forKey: key)
+            ?? "system"
+    }
+
+    /// Written to both places: the shared container for the extension, `.standard` for
+    /// compatibility with an already-installed build.
+    static func write(_ value: String) {
+        defaults.set(value, forKey: key)
+        UserDefaults.standard.set(value, forKey: key)
+    }
+}
+
 @MainActor
 final class LocalizationManager: ObservableObject {
     static let shared = LocalizationManager()
 
+
     @Published var currentLanguage: AppLanguage {
         didSet {
-            UserDefaults.standard.set(currentLanguage.rawValue, forKey: "appLanguage")
+            LangStore.write(currentLanguage.rawValue)
             updateBundle()
         }
     }
@@ -53,7 +84,7 @@ final class LocalizationManager: ObservableObject {
     @Published private(set) var bundle: Bundle = .main
     /// Thread-safe access to current bundle without MainActor
     nonisolated static var resolvedBundle: Bundle {
-        let saved = UserDefaults.standard.string(forKey: "appLanguage") ?? "system"
+        let saved = LangStore.read()
         let lang = AppLanguage(rawValue: saved) ?? .system
         let code = lang.resolvedCode
         if let path = Bundle.main.path(forResource: code, ofType: "lproj"),
@@ -64,7 +95,7 @@ final class LocalizationManager: ObservableObject {
     }
     
     private init() {
-        let saved = UserDefaults.standard.string(forKey: "appLanguage") ?? "system"
+        let saved = LangStore.read()
         currentLanguage = AppLanguage(rawValue: saved) ?? .system
         updateBundle()
     }
@@ -110,6 +141,7 @@ enum L10n {
     static let save = "common.save"
     static let delete = "common.delete"
     static let close = "common.close"
+    static let clear = "common.clear"
     static let edit = "common.edit"
     static let create = "common.create"
     static let copied = "common.copied"
@@ -127,6 +159,7 @@ enum L10n {
     static let moved = "common.moved"
     static let keePassReadOnly = "keepass.readOnly"
     static let keePassSaveBlockedAttachments = "keepass.saveBlockedAttachments"
+    static let keePassUpgradedToV4 = "keepass.upgradedToV4"
     static let fileSaved = "common.fileSaved"
     static let loading = "common.loading"
 
@@ -174,6 +207,7 @@ enum L10n {
         static let subtitle = "auth.subtitle"
         static let serverLabel = "auth.serverLabel"
         static let serverPlaceholder = "auth.serverPlaceholder"
+        static let plainHTTPWarning = "auth.plainHTTPWarning"
         static let emailLabel = "auth.emailLabel"
         static let emailPlaceholder = "auth.emailPlaceholder"
         static let masterPasswordLabel = "auth.masterPasswordLabel"
@@ -261,6 +295,8 @@ enum L10n {
         static let unlimited = "send.unlimited"
         static let hideEmail = "send.hideEmail"
         static let password = "send.password"
+        static let clearPassword = "send.clearPassword"
+        static let passwordCleared = "send.passwordCleared"
         static let nameLabel = "send.nameLabel"
         static let contentLabel = "send.contentLabel"
         static let hideText = "send.hideText"
@@ -287,6 +323,7 @@ enum L10n {
     enum Sidebar {
         static let allItems = "sidebar.allItems"
         static let favorites = "sidebar.favorites"
+        static let recent = "sidebar.recent"
         static let vault = "sidebar.vault"
         static let types = "sidebar.types"
         static let folders = "sidebar.folders"
@@ -294,6 +331,7 @@ enum L10n {
         static let trash = "sidebar.trash"
         static let newFolder = "sidebar.newFolder"
         static let generator = "sidebar.generator"
+        static let passwordHealth = "sidebar.passwordHealth"
         static let sends = "sidebar.sends"
         static let settings = "sidebar.settings"
         static let sync = "sidebar.sync"
@@ -305,6 +343,10 @@ enum L10n {
 
     // MARK: Items List
     enum Items {
+        static let bulkSelected = "items.bulkSelected"
+        static let bulkDelete = "items.bulkDelete"
+        static let bulkDeleteConfirm = "items.bulkDeleteConfirm"
+        static let bulkPartialFailure = "items.bulkPartialFailure"
         static let newItem = "items.newItem"
         static let sortName = "items.sortName"
         static let sortDate = "items.sortDate"
@@ -340,6 +382,9 @@ enum L10n {
         static let created = "detail.created"
         static let modified = "detail.modified"
         static let passwordAge = "detail.passwordAge"
+        static let expires = "detail.expires"
+        static let expired = "detail.expired"
+        static let tags = "detail.tags"
         static let restore = "detail.restore"
         static let restored = "detail.restored"
         static let deleteForever = "detail.deleteForever"
@@ -380,6 +425,7 @@ enum L10n {
 
     // MARK: Editor
     enum Editor {
+        static let icon = "editor.icon"
         static let newItem = "editor.newItem"
         static let editing = "editor.editing"
         static let nameLabel = "editor.nameLabel"
@@ -501,6 +547,11 @@ enum L10n {
         static let themeDark = "settings.themeDark"
         static let language = "settings.language"
         static let showFavicons = "settings.showFavicons"
+        static let textSize = "settings.textSize"
+        static let textSizeHint = "settings.textSizeHint"
+        static let textLarger = "settings.textLarger"
+        static let textSmaller = "settings.textSmaller"
+        static let textReset = "settings.textReset"
         static let logoutButton = "settings.logoutButton"
         static let vaultguardDesc = "settings.vaultguardDesc"
         static let author = "settings.author"
@@ -557,6 +608,30 @@ enum L10n {
     }
 
     // MARK: Drag & Drop
+    // MARK: Password health
+    enum Health {
+        static let title = "health.title"
+        static let subtitle = "health.subtitle"
+        static let allClear = "health.allClear"
+        static let reused = "health.reused"
+        static let weak = "health.weak"
+        static let empty = "health.empty"
+        static let stale = "health.stale"
+    }
+
+    // MARK: Backups (KeePass pre-save snapshots)
+    enum Backup {
+        static let title = "backup.title"
+        static let hint = "backup.hint"
+        static let empty = "backup.empty"
+        static let saveCopy = "backup.saveCopy"
+        static let saved = "backup.saved"
+        static let delete = "backup.delete"
+        static let deleteConfirm = "backup.deleteConfirm"
+        static let deleteMessage = "backup.deleteMessage"
+        static let deleteRefused = "backup.deleteRefused"
+    }
+
     enum Migration {
         static let exportComplete = "migration.exportComplete"
         static let exportButton = "migration.exportButton"
@@ -568,8 +643,14 @@ enum L10n {
         static let importButton = "migration.importButton"
         static let importJSONButton = "migration.importJSONButton"
         static let importJSONHint = "migration.importJSONHint"
+        static let import1PUXButton = "migration.import1PUXButton"
+        static let import1PUXHint = "migration.import1PUXHint"
         static let importCSVButton = "migration.importCSVButton"
         static let importCSVHint = "migration.importCSVHint"
+        static let exportJSONButton = "migration.exportJSONButton"
+        static let exportJSONTitle = "migration.exportJSONTitle"
+        static let exportJSONHint = "migration.exportJSONHint"
+        static let jsonExported = "migration.jsonExported"
         static let importCompleteDedup = "migration.importCompleteDedup"
         static let importTitle = "migration.importTitle"
         static let importHint = "migration.importHint"
@@ -578,7 +659,25 @@ enum L10n {
         static let chooseFile = "migration.chooseFile"
     }
 
+    /// Strings that were once referenced by a literal key string at the call site, where a typo
+    /// in the key is invisible to the compiler and silently shows the raw key to the user.
+    enum Misc {
+        static let cannotOpenFile = "misc.cannotOpenFile"
+        static let noName = "misc.noName"
+        static let noOrgKey = "misc.noOrgKey"
+        static let undecryptable = "misc.undecryptable"
+        static let attachment = "misc.attachment"
+        static let previewUnavailable = "misc.previewUnavailable"
+        static let rename = "misc.rename"
+        static let sortAlphabetically = "misc.sortAlphabetically"
+        static let sortManually = "misc.sortManually"
+        static let user = "misc.user"
+        static let yes = "misc.yes"
+        static let no = "misc.no"
+    }
+
     enum DragDrop {
+        static let tooLarge = "dragdrop.tooLarge"
         static let uploading = "dragdrop.uploading"
         static let uploadComplete = "dragdrop.uploadComplete"
         static let uploadFailed = "dragdrop.uploadFailed"

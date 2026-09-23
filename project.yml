@@ -13,12 +13,12 @@ configFiles:
   Release: Config/Signing.xcconfig
 
 packages:
-  Argon2Swift:
-    url: https://github.com/tmthecoder/Argon2Swift.git
-    # Pin by revision instead of exactVersion because Argon2Swift 1.0.4
-    # declares phc-winner-argon2 using a branch requirement. SwiftPM rejects
-    # stable root requirements that depend on unstable transitive requirements.
-    revision: 53543623fefe68461b7eeea03d7f96677c2fd76d
+  # The Argon2 reference implementation, vendored. It replaced the Argon2Swift package, which
+  # pulled this library in twice — a SwiftPM dependency on a floating branch and a git submodule
+  # that broke fresh checkouts. No network is involved in building the KDF any more. See
+  # Packages/Argon2/PROVENANCE.md for the pinned upstream commit and file hashes.
+  Argon2:
+    path: Packages/Argon2
 
 settings:
   base:
@@ -27,8 +27,8 @@ settings:
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "Apple Development"
     PRODUCT_NAME: VaultGuard
-    MARKETING_VERSION: "2.0.0"
-    CURRENT_PROJECT_VERSION: "3"
+    MARKETING_VERSION: "2.1.0"
+    CURRENT_PROJECT_VERSION: "11"
     INFOPLIST_FILE: VaultGuard/Resources/Info.plist
     CODE_SIGN_ENTITLEMENTS: VaultGuard/Resources/VaultGuard.entitlements
     ENABLE_HARDENED_RUNTIME: YES
@@ -51,7 +51,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.kruatech.vaultguard
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
     dependencies:
-      - package: Argon2Swift
+      - package: Argon2
+        product: CArgon2
       - target: AutoFillProvider
     entitlements:
       path: VaultGuard/Resources/VaultGuard.entitlements
@@ -78,6 +79,7 @@ targets:
       - path: VaultGuard/AutoFillProvider/AutoFillVault.swift
       - path: VaultGuard/AutoFillProvider/CredentialProviderViewController+Passkey.swift
       - path: VaultGuard/Services/CryptoService.swift
+      - path: VaultGuard/Services/Argon2KDF.swift
       - path: VaultGuard/Services/KeychainService.swift
       - path: VaultGuard/Services/VaultCache.swift
       - path: VaultGuard/Services/AutoFillCache.swift
@@ -87,11 +89,19 @@ targets:
       - path: VaultGuard/Services/Logger.swift
       - path: VaultGuard/Services/LocalizationManager.swift
       - path: VaultGuard/Shared/SharedConfig.swift
+      - path: VaultGuard/Shared/AutoFillHostMatcher.swift
       - path: VaultGuard/Models/Models.swift
-      - path: VaultGuard/Resources/en.lproj
-      - path: VaultGuard/Resources/ru.lproj
+      # Локализация расширения: XcodeGen создаёт variant group только когда в
+      # источниках указан каталог, СОДЕРЖАЩИЙ .lproj, а не сами .lproj. При
+      # прямом указании en.lproj/ru.lproj строки не попадали в .appex, и в UI
+      # автозаполнения показывались сырые ключи вида autofill.errLocked.
+      - path: VaultGuard/Resources
+        includes:
+          - "en.lproj/Localizable.strings"
+          - "ru.lproj/Localizable.strings"
     dependencies:
-      - package: Argon2Swift
+      - package: Argon2
+        product: CArgon2
     settings:
       base:
         INFOPLIST_FILE: VaultGuard/AutoFillProvider/Info.plist
@@ -115,6 +125,7 @@ targets:
       - path: VaultGuardTests
       - path: VaultGuard/Services/KeePass/KeePassStreamCiphers.swift
       - path: VaultGuard/Services/KeePass/KeePassKDF.swift
+      - path: VaultGuard/Services/Argon2KDF.swift
       - path: VaultGuard/Services/KeePass/KDBXReader.swift
       - path: VaultGuard/Services/KeePass/KDBXVaultMapper.swift
       - path: VaultGuard/Services/KeePass/KDBXWriter.swift
@@ -127,13 +138,34 @@ targets:
       - path: VaultGuard/Services/TOTPService.swift
       - path: VaultGuard/Services/Logger.swift
       - path: VaultGuard/Services/LocalizationManager.swift
+      - path: VaultGuard/Services/SearchTranslit.swift
+      - path: VaultGuard/Services/BitwardenEndpoints.swift
+      - path: VaultGuard/Services/PasswordAudit.swift
+      - path: VaultGuard/Services/RecentCiphersStore.swift
+      - path: VaultGuard/Services/KeePassBackupPolicy.swift
+      - path: VaultGuard/Services/VaultListPipeline.swift
+      - path: VaultGuard/Services/ZipListing.swift
+      - path: VaultGuard/Services/ZipArchive.swift
+      - path: VaultGuard/Services/OnePasswordImporter.swift
+      - path: VaultGuard/Services/TextScaleManager.swift
+      - path: VaultGuard/Design/VGDesign.swift
+      - path: VaultGuard/Shared/SharedConfig.swift
+      - path: VaultGuard/Shared/AutoFillHostMatcher.swift
       - path: VaultGuard/Models/Models.swift
       - path: VaultGuard/ViewModels/Account.swift
     dependencies:
-      - package: Argon2Swift
+      - package: Argon2
+        product: CArgon2
     settings:
       base:
         PRODUCT_NAME: VaultGuardTests
         PRODUCT_MODULE_NAME: VaultGuardTests
         PRODUCT_BUNDLE_IDENTIFIER: com.kruatech.vaultguard.tests
         GENERATE_INFOPLIST_FILE: YES
+        # The global settings.base hands every target the app's entitlements, which include
+        # the AutoFill credential-provider capability. A unit-test bundle neither needs it nor
+        # has a provisioning profile granting it, so signing failed before a single test ran.
+        # Cleared here only; the app and the extension keep theirs.
+        CODE_SIGN_ENTITLEMENTS: ""
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO

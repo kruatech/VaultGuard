@@ -92,45 +92,64 @@ jobs:
           print(f'ok: {len(en)} localization keys in parity')
           EOF
 
-      - name: Package.resolved pins Argon2Swift revision
+      # The Argon2 implementation that derives every vault key is vendored in Packages/Argon2
+      # at a pinned upstream commit. It replaced the Argon2Swift package, which pulled the same
+      # library in on a floating branch and as a git submodule that broke fresh clones. Any
+      # change to these files must be a reviewed update recorded in PROVENANCE.md — never
+      # something that arrives with an unrelated change.
+      - name: Vendored Argon2 matches SHA256SUMS
+        working-directory: Packages/Argon2/Sources/CArgon2
+        run: sha256sum --check --strict ../../SHA256SUMS
+
+      # SHA256SUMS lists what should be there; a file added beside them would pass the check
+      # above unnoticed.
+      - name: No unlisted files in vendored Argon2
+        working-directory: Packages/Argon2/Sources/CArgon2
+        run: |
+          listed=$(awk '{print $2}' ../../SHA256SUMS | LC_ALL=C sort)
+          present=$(find . -type f \( -name '*.c' -o -name '*.h' \) | LC_ALL=C sort)
+          if [ "$listed" != "$present" ]; then
+            echo "::error::Vendored Argon2 source files differ from SHA256SUMS"
+            diff <(echo "$listed") <(echo "$present") || true
+            exit 1
+          fi
+
+      # The strongest form of the old "no branch-based pins" check: no remote Swift packages
+      # at all. Anything the build compiles is in this repository. Adding a remote dependency
+      # is possible, but it should be a decision someone makes on purpose, which starts by
+      # changing this check.
+      - name: No remote Swift package dependencies
         run: |
           python3 - <<'EOF'
-          import json
+          import re, sys, json
           from pathlib import Path
-          expected = '53543623fefe68461b7eeea03d7f96677c2fd76d'
-          data = json.loads(Path('VaultGuard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())
-          pins = {p['identity']: p['state'] for p in data['pins']}
-          state = pins.get('argon2swift', {})
-          if state.get('revision') != expected or 'branch' in state:
-              print('argon2swift is not pinned to the audited revision:', state)
-              raise SystemExit(1)
-          print('ok: Argon2Swift is pinned to audited revision', expected)
+          # Standard library only, like the other checks here: the runner is not guaranteed
+          # to have PyYAML. The packages block is every indented line under `packages:`.
+          block = re.search(r'^packages:\n((?:[ \t]+.*\n|[ \t]*\n)*)', Path('project.yml').read_text(), re.M)
+          body = block.group(1) if block else ''
+          packages = re.findall(r'^  (\w[\w-]*):\s*$', body, re.M)
+          remote = re.findall(r'^\s+url:\s*(\S+)', body, re.M)
+          if remote:
+              for url in remote:
+                  print(f'::error::remote Swift package in project.yml: {url}')
+              sys.exit(1)
+          resolved = Path('VaultGuard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved')
+          if resolved.exists():
+              pins = json.loads(resolved.read_text()).get('pins') or []
+              if pins:
+                  print('::error::Package.resolved pins remote packages:', [p.get('identity') for p in pins])
+                  sys.exit(1)
+          print(f'ok: {len(packages)} package(s), all local')
           EOF
 
-      - name: No unexpected branch-based dependency pins
+      # A literal key (`"misc.yes".localized`) is invisible to the compiler: a typo shows the raw
+      # key to the user instead of failing the build. Keys go through L10n constants.
+      - name: No literal localization keys
         run: |
-          python3 - <<'EOF'
-          import json
-          from pathlib import Path
-          # phc-winner-argon2 is intentionally branch-tracked upstream (Argon2Swift's
-          # manifest requires it), but its revision IS pinned, so the build stays
-          # deterministic. Any OTHER pin carrying a "branch" is a supply-chain regression.
-          allowed_branch = {'phc-winner-argon2'}
-          data = json.loads(Path('VaultGuard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())
-          offenders = []
-          for p in data['pins']:
-              state = p.get('state', {})
-              if 'branch' in state and p['identity'] not in allowed_branch:
-                  offenders.append((p['identity'], state.get('branch')))
-              # even the allowed one must keep a pinned revision
-              if p['identity'] in allowed_branch and not state.get('revision'):
-                  offenders.append((p['identity'], 'branch without pinned revision'))
-          if offenders:
-              for ident, br in offenders:
-                  print(f'::error::branch-pinned dependency: {ident} -> {br}')
-              raise SystemExit(1)
-          print('ok: no unexpected branch-based pins')
-          EOF
+          if grep -rnE '"[a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+"\.localized' VaultGuard --include='*.swift' \
+               | grep -v 'Services/LocalizationManager.swift'; then
+            echo "::error::literal localization key — add a constant to L10n instead"; exit 1
+          fi
 
       - name: No committed .DS_Store
         run: |
@@ -151,7 +170,7 @@ jobs:
           # These exact phrasings were removed during the multi-vault repositioning;
           # they must not return to the public-facing docs.
           if grep -rniE 'unofficial[, ]+third-party native macOS client|unofficial Bitwarden client|unofficial, third-party client' \
-               README.md PRIVACY.md SECURITY.md TRADEMARKS.md NOTICE docs/security-model.md docs/app-store-listing.md docs/app-store-review-notes.md 2>/dev/null; then
+               README.md CONTRIBUTING.md PRIVACY.md SECURITY.md TRADEMARKS.md NOTICE docs/security-model.md docs/app-store-listing.md docs/app-store-review-notes.md 2>/dev/null; then
             echo "::error::Stale 'unofficial client' positioning found in a public doc"; exit 1
           fi
 

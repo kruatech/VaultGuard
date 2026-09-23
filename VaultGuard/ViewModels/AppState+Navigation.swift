@@ -3,7 +3,7 @@ import SwiftUI
 
 extension AppState {
     func switchVault(to orgId: String?) {
-        activeVaultId = orgId; filter = .all; selectedCipherId = nil; searchText = ""
+        activeVaultId = orgId; filter = .all; selectedCipherIds = []; searchText = ""
     }
 
     // MARK: - Folder Reorder
@@ -44,11 +44,11 @@ extension AppState {
 
     func copySelectedPassword() {
         guard let cipher = selectedCipher, let pw = cipher.login?.password else { return }
-        copyToClipboard(pw)
+        copyToClipboard(pw, from: cipher)
     }
 
     func copySelectedUsername() {
         guard let cipher = selectedCipher, let un = cipher.login?.username else { return }
-        copyToClipboard(un)
+        copyToClipboard(un, from: cipher)
     }
 }

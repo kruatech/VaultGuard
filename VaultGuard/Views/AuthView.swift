@@ -228,7 +228,7 @@ struct AuthView: View {
                 Button(action: { appState.removeAccount(acc.id); showAccountMenu = false }) {
                     Image(systemName: "trash").font(VGFont.body).foregroundColor(VGColor.danger)
                         .padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
-                }.buttonStyle(.plain).handCursor().help(L10n.delete.localized)
+                }.buttonStyle(.plain).handCursor().vgHelp(L10n.delete.localized)
                 }
             }
             Divider().padding(.vertical, 4)
@@ -348,6 +348,7 @@ struct AuthView: View {
                 Button(action: { showPassword.toggle() }) {
                     Image(systemName: showPassword ? "eye.slash" : "eye").foregroundColor(VGColor.secondary)
                 }.buttonStyle(.plain).handCursor()
+                    .vgHelp((showPassword ? L10n.Editor.hide : L10n.Editor.show).localized)
             }
         }
     }
@@ -412,6 +413,13 @@ struct AuthView: View {
                 fieldBox(icon: "globe") {
                     TextField(L10n.Auth.serverPlaceholder.localized, text: $serverURL).textFieldStyle(.plain).font(VGFont.bodyLarge).lineLimit(1)
                         .onChange(of: serverURL) { _, v in if v.count > 255 { serverURL = String(v.prefix(255)) } }
+                }
+                // Plain HTTP is allowed on purpose — self-hosted servers on a home network often
+                // run without TLS — but it is not safe, and the user should know before signing in.
+                if Account.usesPlainHTTP(serverURL) {
+                    Label(L10n.Auth.plainHTTPWarning.localized, systemImage: "exclamationmark.triangle.fill")
+                        .font(VGFont.caption).foregroundColor(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             connectionNameField
@@ -483,7 +491,7 @@ struct AuthView: View {
                         if keyfileURL != nil {
                             Button(action: { keyfileURL = nil }) {
                                 Image(systemName: "xmark.circle.fill").foregroundColor(VGColor.secondary)
-                            }.buttonStyle(.plain).handCursor()
+                            }.buttonStyle(.plain).handCursor().vgHelp(L10n.clear.localized)
                         } else {
                             Text(L10n.Auth.chooseButton.localized).font(VGFont.bodyMedium).foregroundColor(VGColor.accent)
                         }

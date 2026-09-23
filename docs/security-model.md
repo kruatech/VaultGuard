@@ -81,7 +81,10 @@ the derived/wrapped material is kept in memory for the session; the raw master
 password is not retained after derivation.
 
 > Implementation of the KDF and symmetric primitives lives in `CryptoService.swift`
-> (server) and `Services/KeePass/*` (KDBX). This document does not restate
+> (server) and `Services/KeePass/*` (KDBX). Argon2 itself is the reference
+> implementation vendored in `Packages/Argon2` at a pinned upstream commit, reached
+> only through `Services/Argon2KDF.swift`; `Packages/Argon2/PROVENANCE.md` records the
+> commit and `SHA256SUMS` the hash of every file. This document does not restate
 > parameter choices; treat those files as the source of truth.
 
 ## Data at rest
@@ -98,8 +101,11 @@ read it and is not entitled to its key.
 
 AutoFill uses a separate, minimal cache — not the offline cache above. After
 unlock/sync the main app decrypts the vault itself and writes only the fields the
-extension needs (item id, name, username, password, URIs) to a per-account file in
-the shared App Group container. The file is sealed with AES-GCM under a key
+extension needs (item id, name, username, password, URIs, last-modified date) to a
+per-account file in the shared App Group container. Two things are deliberately left
+out: items marked *master-password reprompt*, which the extension cannot re-prompt for
+and so must never offer, and URIs whose match rule is *never*, which the user has
+excluded from filling. The file is sealed with AES-GCM under a key
 **derived** (HKDF-SHA256) from the shared AutoFill secret, scoped to the account id
 and vault kind. Because the key is derived from the shared secret rather than
 stored, removing the secret (lock / logout / account removal / local vault close /
@@ -107,11 +113,45 @@ TTL expiry) makes the cache unopenable. The extension never receives the real
 vault/user key: the shared secret is a fresh random value generated on each
 publish, used only to derive the AutoFill cache key.
 
-### Attachment previews
+### Attachments
 
-Decrypted attachment previews are written only to an isolated temporary directory.
-Older previews are removed before a new preview is produced, and previews are
-cleaned up when the app locks.
+Decrypted attachments are previewed **in memory only**; a preview is never written to
+disk. The decrypted bytes are dropped when the preview closes and when the app locks.
+A decrypted file reaches the disk only when the user saves it explicitly, through the
+system save panel, to a location they choose — after which it is an ordinary file the
+app does not manage or clean up.
+
+Zip attachments are previewed by listing their central directory; nothing is
+extracted. Entry names are shown with bidirectional-text controls removed, so a name
+cannot disguise its real extension, and folder nesting is capped so a crafted archive
+cannot exhaust the stack.
+
+(An earlier version of this document said previews were written to a temporary
+directory and cleaned up on lock. No such directory exists in the code.)
+
+### KeePass pre-save snapshots
+
+Before each save, a copy of the `.kdbx` file as it was on disk is kept in the app's
+container (`Application Support/KeePassBackups`), up to ten per vault, oldest removed
+first. The copies are the encrypted file itself, not decrypted content.
+
+One consequence to be aware of: a snapshot stays encrypted with whatever credentials
+the file had when it was taken. Changing a database's master password does not
+re-encrypt older snapshots, so anyone holding the old password and a snapshot can open
+that earlier state. Snapshots can be deleted one by one from Settings; do so after changing a
+password if that matters.
+
+### Unprotected metadata
+
+A few values are stored in the app's `UserDefaults` rather than the Keychain, because
+they are identifiers or public data rather than secrets:
+
+- pinned certificate fingerprints (public certificate hashes; see *Data in transit*);
+- the recently-used list — item ids only, no names, passwords or URLs;
+- the manual folder order — folder ids only.
+
+They are readable by anything able to read the app's preferences, which the threat
+model already treats as a compromised session. None of them carries vault content.
 
 ## Biometric unlock
 
@@ -147,6 +187,13 @@ main app has published a valid **shared AutoFill secret** for the active account
   credentials and prompts the user to open and unlock VaultGuard.
 - On lock / logout / account removal / local vault close the main app removes the
   shared secret, the active-vault metadata, and the AutoFill cache file.
+- **Credential identities survive a lock** (accepted trade-off). The usernames and
+  domains registered with the system for QuickType suggestions stay registered while
+  the vault is locked, and are removed only on logout. While locked, the QuickType bar
+  therefore still shows which accounts exist — to anyone at the unlocked Mac, without
+  the master password. Clearing them on lock would also remove the suggestion that
+  starts the AutoFill flow, since tapping it is what leads the user to the unlock
+  prompt. Identities carry no passwords.
 
 The extension never reads the offline-cache key, the wrapped user key, or any
 token: those live in the app-private group it is not entitled to.
@@ -166,6 +213,12 @@ VaultGuard implements passkeys as discoverable credentials, scoped per account:
   switch.
 - Logout, account removal, and local-vault removal delete the account's passkey
   private keys; they do not remain readable afterwards.
+- A registration never replaces credentials it could not read. The stored set is
+  read, updated and written back; if the read fails — a cancelled or expired
+  authentication, a locked keychain, or stored data that no longer decodes — the
+  registration is refused instead of writing a set containing only the new key.
+  Passkeys created here are not synchronised anywhere, so overwriting them would lose
+  them permanently.
 
 > Verification note: reading a user-presence-gated item from the extension process
 > across the app/extension boundary is validated on-device (see
@@ -212,7 +265,28 @@ explicitly selected.
   certificate hashes, not secrets). Any code running unsandboxed as the same user —
   which is out of scope per the threat model above — could alter them; they are not
   integrity-protected beyond the app sandbox.
+- **Plain HTTP to the local network is allowed** (`NSAllowsLocalNetworking`), because
+  self-hosted servers on a home network often run without TLS. It is not safe: signing
+  in sends the master-password hash and receives bearer tokens, and over HTTP anyone on
+  the same network can read both. The vault itself stays encrypted, but the hash signs
+  in to the server account. The sign-in screen warns whenever the address is `http://`.
+  A self-signed certificate with the pinning above is the safe way to run a server
+  without a public CA.
 - In local KDBX mode no network connection is made for vault access.
+
+## Clipboard and screen
+
+- Copied secrets are marked with the `org.nspasteboard.ConcealedType` and
+  `TransientType` pasteboard types, which well-behaved clipboard managers honour by
+  not recording them.
+- A copied value is cleared from the pasteboard after the configured timeout, and
+  immediately when the vault locks — provided it is still the value VaultGuard put
+  there, so something the user copied elsewhere in the meantime is left alone.
+- A revealed password or hidden field is masked again after 30 seconds.
+- **No protection against screen capture.** macOS no longer offers a public way to keep
+  a window out of screen recording or screen sharing; `NSWindow.sharingType = .none` is
+  ignored by ScreenCaptureKit since macOS 15. Anything shown on screen can be captured.
+  The reveal timeout is the mitigation available.
 
 ## Memory handling (best-effort)
 
@@ -223,6 +297,12 @@ copies produced by accessors (`data`, `string`), bridging, or intermediate
 `Data`/`String` values are outside the wrappers' control and are not zeroed. The
 KeePass (KDBX) code path currently keeps its derived keys in plain `Data` for the
 duration of the unlocked session; they are dropped (not explicitly zeroed) on lock.
+
+The server session object is replaced, never mutated, when it is torn down or rebuilt.
+Work already running on a background thread keeps the instance it started with, and its
+key material is zeroed when that work finishes and the last reference goes away. This is
+what allows decryption and key derivation to run off the main thread without a lock
+racing a read of the keys.
 An attacker able to read the app's memory is inside the "compromised local
 session" case that the threat model already excludes.
 
@@ -233,6 +313,9 @@ session" case that the threat model already excludes.
 - It operates no hosted service and receives no vault content; it connects only to
   the server the user configures, or to nothing at all in local KDBX mode.
 - It collects no analytics, telemetry, crash reports, or tracking.
+- It writes no secrets to its logs. Messages carry no vault content, keys, tokens or
+  passwords; the security-audit channel records events — unlock, lock, failed sign-in,
+  export, snapshot deletion — never their content.
 
 ## Reporting
 
@@ -251,7 +334,10 @@ account/kind-scoped minimal cache), the `AutoFillSecretPayload` struct in
 `KeychainService.swift` (TTL encode / validate), `PasskeyStore.swift` and `CredentialProviderViewController+Passkey.swift`
 (user-presence-gated passkey storage and the assertion/registration flow), and the
 publish/teardown paths in `AppState+Sync.swift`, `AppState+KeePass.swift`, and
-`AppState+Auth.swift`. KDF parameters and AES-GCM nonce/tag handling in
+`AppState+Auth.swift`. Later additions: `Argon2KDF.swift` and `Packages/Argon2` (key
+derivation), `KeePassBackupPolicy.swift` (snapshot rotation), `ZipListing.swift`
+(attachment listing), `AppState+Clipboard.swift` (pasteboard handling), and
+`AccountManager.swift` / `NetworkDelegate.swift` (read-before-overwrite guards). KDF parameters and AES-GCM nonce/tag handling in
 `CryptoService` / KDBX readers are treated as the source of truth for those
 primitives. The passkey cross-process read is pending on-device confirmation as
 noted in the Passkeys section.

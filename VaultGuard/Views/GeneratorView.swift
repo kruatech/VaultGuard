@@ -86,7 +86,7 @@ struct GeneratorView: View {
                 Image(systemName: "xmark").font(VGFont.bodyEmphasis).foregroundColor(VGColor.secondary)
                     .frame(width: 26, height: 26)
                     .background(VGColor.surface.opacity(0.6)).clipShape(Circle())
-            }.buttonStyle(.plain).handCursor()
+            }.buttonStyle(.plain).handCursor().vgHelp(L10n.close.localized)
         }
         .padding(.horizontal, VGSpacing.xxxl).padding(.top, VGSpacing.xxxl).padding(.bottom, VGSpacing.xl)
     }

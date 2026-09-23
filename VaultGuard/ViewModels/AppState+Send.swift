@@ -31,6 +31,7 @@ extension AppState {
             let base = await api.sendShareBaseURL()
             let url = "\(base)/#/send/\(accessId)/\(material.fragment)"
             await loadSends()
+            Log.audit("send created")
             showToast(.info(L10n.Send.created.localized))
             return url
         } catch {
@@ -129,6 +130,7 @@ extension AppState {
             let base = await api.sendShareBaseURL()
             let url = "\(base)/#/send/\(accessId)/\(material.fragment)"
             await loadSends()
+            Log.audit("send created")
             showToast(.info(L10n.Send.created.localized))
             return url
         } catch {
@@ -143,6 +145,26 @@ extension AppState {
     private func deriveSendKey(for summary: SendSummary) -> SymmetricCryptoKey? {
         guard let sendKey = crypto.decryptToData(summary.encryptedKey) else { return nil }
         return crypto.sendCryptoKey(fromSendKey: sendKey)
+    }
+
+    /// Remove a Send's access password.
+    ///
+    /// `updateSend` cannot do this. The server only touches the password when the field is
+    /// present in the body, so the `password: nil` that `putSend` always sends leaves the old
+    /// password in place — the "clear password" action appeared to work and silently did
+    /// nothing. The dedicated endpoint is the only way to clear it.
+    ///
+    /// Safe to call on a Send that has no password: the endpoint just sets it to none.
+    func clearSendPassword(_ summary: SendSummary) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            _ = try await api.removeSendPassword(id: summary.id)
+            await loadSends()
+            showToast(.info(L10n.Send.passwordCleared.localized))
+        } catch {
+            showToast(.error(error.localizedDescription))
+        }
     }
 
     /// Enable/disable a Send without changing its content.

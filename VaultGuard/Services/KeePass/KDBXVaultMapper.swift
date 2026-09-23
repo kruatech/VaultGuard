@@ -66,6 +66,9 @@ enum KDBXVaultMapper {
         private var entryKV: [(key: String, value: String, prot: Bool)] = []
         private var entryCreation: Date?
         private var entryModified: Date?
+        private var entryExpires = false
+        private var entryExpiryTime: Date?
+        private var entryTags: String?
         private var binAttachments: [(key: String, ref: Int)] = []
         private var curBinKey: String?
         private var curBinRef: Int?
@@ -102,6 +105,7 @@ enum KDBXVaultMapper {
                 if historyDepth == 0 {
                     realEntryActive = true; entryKV = []; entryId = ""
                     entryCreation = nil; entryModified = nil
+                    entryExpires = false; entryExpiryTime = nil; entryTags = nil
                     binAttachments = []
                     entryIconId = nil; entryCustomIconUUID = nil
                 }
@@ -192,6 +196,19 @@ enum KDBXVaultMapper {
                 if historyDepth == 0, parentElement() == "Times", grandparentElement() == "Entry" {
                     entryModified = Self.parseKdbxTime(chars)
                 }
+            case "ExpiryTime":
+                if historyDepth == 0, parentElement() == "Times", grandparentElement() == "Entry" {
+                    entryExpiryTime = Self.parseKdbxTime(chars)
+                }
+            case "Expires":
+                // KeePass always writes an ExpiryTime; only this flag says whether it counts.
+                if historyDepth == 0, parentElement() == "Times", grandparentElement() == "Entry" {
+                    entryExpires = chars.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
+                }
+            case "Tags":
+                if historyDepth == 0, realEntryActive, parentElement() == "Entry" {
+                    entryTags = chars
+                }
             case "String":
                 curKey = nil; curValueProtected = false
             case "Binary":
@@ -214,6 +231,48 @@ enum KDBXVaultMapper {
             elementStack.removeLast()
         }
 
+        /// Resolve an entry's TOTP configuration into something `TOTPService` can generate from.
+        ///
+        /// `otp` is the modern KeePassXC attribute and already holds a complete `otpauth://`
+        /// URI, so it wins and is passed through untouched.
+        ///
+        /// The legacy KeePassXC / KeeTrayTOTP layout splits it in two: the Base32 seed lives in
+        /// `TOTP Seed` and its parameters in `TOTP Settings`, formatted `<period>;<digits>` —
+        /// `30;6` being the common case, `30;S` meaning the Steam alphabet, and any further
+        /// `;`-separated fields (KeeTrayTOTP appends a URL) carrying nothing we need. Only the
+        /// seed used to be read, so an entry configured as `60;8` silently generated a 30-second
+        /// 6-digit code and every code the user typed was rejected. Folding both attributes into
+        /// an otpauth URI hands the generator the parameters it already knows how to honour.
+        private static func totpValue(_ kv: [String: String]) -> String? {
+            if let otp = kv["otp"], !otp.isEmpty { return otp }
+            guard let rawSeed = kv["TOTP Seed"], !rawSeed.isEmpty else { return nil }
+            let seed = rawSeed.replacingOccurrences(of: " ", with: "")
+            guard let settings = kv["TOTP Settings"], !settings.isEmpty else { return seed }
+
+            let parts = settings.split(separator: ";", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            let period = max(1, parts.first.flatMap(Int.init) ?? 30)
+            let digitsField = parts.count > 1 ? parts[1] : "6"
+
+            // The label is cosmetic here — nothing downstream reads it — so it stays a fixed
+            // ASCII token rather than the entry title, which would need percent-encoding.
+            if digitsField.uppercased() == "S" {
+                return "otpauth://totp/KeePass?secret=\(seed)&period=\(period)&encoder=steam"
+            }
+            let digits = Int(digitsField) ?? 6
+            return "otpauth://totp/KeePass?secret=\(seed)&period=\(period)&digits=\(digits)"
+        }
+
+        /// `<Tags>` is one string; KeePass 2.x separates with ";" and KeePassXC with ",", so
+        /// both are accepted. Empty and whitespace-only pieces are dropped.
+        private static func splitTags(_ raw: String?) -> [String]? {
+            guard let raw, !raw.isEmpty else { return nil }
+            let parts = raw.split(whereSeparator: { $0 == ";" || $0 == "," })
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts
+        }
+
         // MARK: build cipher
 
         private func emitCipher() {
@@ -226,7 +285,7 @@ enum KDBXVaultMapper {
             let password = kv["Password"]
             let url = kv["URL"]
             let notes = kv["Notes"]
-            let totp = kv["otp"] ?? kv["TOTP Seed"]
+            let totp = Self.totpValue(kv)
 
             let uris: [CipherUri]? = (url?.isEmpty == false) ? [CipherUri(uri: url, match: nil)] : nil
             let login = CipherLogin(username: username, password: password, totp: totp, uris: uris)
@@ -266,7 +325,9 @@ enum KDBXVaultMapper {
                 favorite: false, reprompt: nil,
                 creationDate: entryCreation, revisionDate: entryModified,
                 deletedDate: inRB ? Date() : nil,
-                keepassIcon: kpIcon)
+                keepassIcon: kpIcon,
+                keepassExpiry: entryExpires ? entryExpiryTime : nil,
+                keepassTags: Self.splitTags(entryTags))
             ciphers.append(cipher)
         }
 

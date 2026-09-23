@@ -1,6 +1,6 @@
 # Contributing to VaultGuard
 
-Thanks for your interest in improving VaultGuard — an **unofficial, third-party** macOS client for Bitwarden / Vaultwarden servers. Contributions of all kinds are welcome: bug reports, fixes, features, documentation, and translations.
+Thanks for your interest in improving VaultGuard — an independent, open-source macOS password manager for local KeePass (`.kdbx`) databases and self-hosted Bitwarden / Vaultwarden-compatible servers. Contributions of all kinds are welcome: bug reports, fixes, features, documentation, and translations.
 
 ## Before you start
 
@@ -24,7 +24,12 @@ xcodegen generate
 open VaultGuard.xcodeproj
 ```
 
-Swift package dependencies (Argon2Swift, pinned) are resolved automatically by Xcode.
+There are no remote Swift packages to resolve: the Argon2 implementation is vendored in
+`Packages/Argon2` (see its `PROVENANCE.md`). Changing it is a deliberate, reviewed update —
+CI rejects any file that does not match `Packages/Argon2/SHA256SUMS`.
+
+See **[docs/development.md](docs/development.md)** for running the tests, regenerating test
+fixtures, and the rules for code that derives keys or runs off the main thread.
 
 Never commit `Config/Signing.local.xcconfig` or any `xcuserdata` — they are git-ignored for a reason.
 
@@ -32,7 +37,9 @@ Never commit `Config/Signing.local.xcconfig` or any `xcuserdata` — they are gi
 
 - **No new force-unwraps** (`!`) on values that can realistically be `nil` (URLs, decoded data, optionals from external input). Use `guard let` with a typed error.
 - **No secrets to disk.** The master password is never persisted; only derived/wrapped key material lives in the Keychain. Don't add code paths that store the master password.
-- **Localize user-facing strings** via `L10n.*` and add the key to both `Resources/en.lproj/Localizable.strings` and `Resources/ru.lproj/Localizable.strings`. Keep the two files in parity.
+- **Localize user-facing strings** via `L10n.*` and add the key to both `Resources/en.lproj/Localizable.strings` and `Resources/ru.lproj/Localizable.strings`. Keep the two files in parity. Never call `.localized` on a literal key string (`"misc.yes".localized`) — add a constant, so a typo in the key is a compile error rather than a raw key shown to the user.
+- **Never run a key-derivation function on the main actor.** PBKDF2 and Argon2 take long enough to freeze the window. See `docs/development.md`.
+- **Test logic by moving it out of `AppState`**, into a type the test target can build — not by adding `AppState` to the test target.
 - **Per-account model only.** Use `keychain.account(id)` and `VaultCache.forAccount(id)`. There is no global/flat fallback.
 - Keep the diff focused; match the surrounding style.
 

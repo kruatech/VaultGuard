@@ -65,7 +65,7 @@ struct SendsView: View {
                 Image(systemName: "plus").font(VGFont.bodyEmphasis).foregroundColor(VGColor.accent)
                     .frame(width: 26, height: 26)
                     .background(VGColor.surface.opacity(0.6)).clipShape(Circle())
-            }.buttonStyle(.plain).handCursor().help(L10n.Send.createButton.localized)
+            }.buttonStyle(.plain).handCursor().vgHelp(L10n.Send.createButton.localized)
             closeButton { dismiss() }
         }
         .padding(.horizontal, VGSpacing.xxxl).padding(.top, VGSpacing.xxxl).padding(.bottom, VGSpacing.xl)
@@ -106,11 +106,16 @@ struct SendsView: View {
                 Button(s.disabled ? L10n.Send.enable.localized : L10n.Send.disable.localized) {
                     Task { await appState.setSendDisabled(s, disabled: !s.disabled) }
                 }.buttonStyle(.bordered).controlSize(.small).handCursor()
+                // Offered unconditionally: the server does not report whether a Send is
+                // password-protected, and clearing an absent password is a no-op.
+                Button(L10n.Send.clearPassword.localized) {
+                    Task { await appState.clearSendPassword(s) }
+                }.buttonStyle(.bordered).controlSize(.small).handCursor()
                 Spacer()
                 Button(action: { Task { await appState.deleteSend(s) } }) {
                     Image(systemName: "trash").foregroundColor(VGColor.danger)
                         .frame(width: 26, height: 22).contentShape(Rectangle())
-                }.buttonStyle(.plain).handCursor().help(L10n.delete.localized)
+                }.buttonStyle(.plain).handCursor().vgHelp(L10n.delete.localized)
             }
         }
         .vgCard()

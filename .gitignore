@@ -10,8 +10,12 @@ xcuserdata/
 *.xccheckout
 *.xcscmblueprint
 
-# Swift Package Manager
+# Swift Package Manager (also covers Packages/Argon2/.swiftpm, which Xcode creates when it
+# opens the local package). .build/ appears if the package is built with `swift build`.
 .swiftpm/
+.build/
+# Left behind by an old workaround that cloned packages into the project directory.
+.spm/
 
 # Local signing (per-developer Apple Team ID — never commit)
 Config/Signing.local.xcconfig
@@ -22,7 +26,8 @@ docs/review/
 *.kdbx.bak
 
 # XcodeGen-generated project (source of truth is project.yml).
-# Package.resolved is kept tracked for dependency pinning / CI checks.
+# There are no remote Swift packages, so there is no Package.resolved to track; CI fails if
+# one appears with pins in it.
 VaultGuard.xcodeproj/project.pbxproj
 VaultGuard.xcodeproj/xcshareddata/xcschemes/
 

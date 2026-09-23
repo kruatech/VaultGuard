@@ -3,6 +3,7 @@
 "common.save" = "Сохранить";
 "common.delete" = "Удалить";
 "common.close" = "Закрыть";
+"common.clear" = "Очистить";
 "common.copy" = "Копировать";
 "common.download" = "Скачать";
 "common.preview" = "Просмотр";
@@ -25,6 +26,7 @@
 "auth.title" = "VaultGuard";
 "auth.subtitle" = "Менеджер паролей";
 "auth.serverLabel" = "Адрес сервера";
+"auth.plainHTTPWarning" = "Без шифрования: любой в этой сети может перехватить данные входа и воспользоваться ими. Используйте https:// — самоподписанный сертификат подойдёт, см. опцию ниже.";
 "auth.serverPlaceholder" = "https://vault.example.com";
 "auth.emailLabel" = "Email";
 "auth.emailPlaceholder" = "user@example.com";
@@ -52,6 +54,7 @@
 
 /* Sidebar */
 "sidebar.allItems" = "Все записи";
+"sidebar.recent" = "Недавние";
 "sidebar.favorites" = "Избранное";
 "sidebar.vault" = "Хранилище";
 "sidebar.types" = "Типы";
@@ -59,6 +62,14 @@
 "sidebar.collections" = "Коллекции";
 "sidebar.trash" = "Корзина";
 "sidebar.newFolder" = "Новая папка";
+"sidebar.passwordHealth" = "Проверка паролей";
+"health.title" = "Проверка паролей";
+"health.subtitle" = "Проверка идёт на этом Mac. Никуда ничего не отправляется.";
+"health.allClear" = "Проблем не найдено";
+"health.reused" = "Повторяется в записях: %d";
+"health.weak" = "Слабый пароль";
+"health.empty" = "Пароль не сохранён";
+"health.stale" = "Не менялся %d дн.";
 "sidebar.generator" = "Генератор";
 "sidebar.sends" = "Send";
 "send.title" = "Send";
@@ -71,6 +82,8 @@
 "send.unlimited" = "Лимит открытий: без ограничения";
 "send.hideEmail" = "Скрыть мой email от получателей";
 "send.password" = "Пароль (необязательно)";
+"send.clearPassword" = "Убрать пароль";
+"send.passwordCleared" = "Пароль Send удалён";
 "send.nameLabel" = "Название";
 "send.contentLabel" = "Текст для передачи";
 "send.hideText" = "Скрывать текст по умолчанию";
@@ -103,6 +116,10 @@
 "items.newItem" = "Новая";
 "items.sortName" = "А-Я";
 "items.sortDate" = "Дата";
+"items.bulkSelected" = "Выбрано записей: %d";
+"items.bulkDelete" = "Удалить записи (%d)";
+"items.bulkDeleteConfirm" = "Удалить записи (%d)?";
+"items.bulkPartialFailure" = "Выполнено: %d, не удалось: %d";
 "items.notFound" = "Не найдено";
 "items.noResults" = "Нет результатов по «%@»";
 "items.emptyTitle" = "Создайте первый элемент";
@@ -131,6 +148,9 @@
 "detail.created" = "Создано";
 "detail.modified" = "Изменено";
 "detail.passwordAge" = "Пароль";
+"detail.expires" = "Истекает";
+"detail.expired" = "Истёк";
+"detail.tags" = "Метки";
 "detail.restore" = "Восстановить";
 "detail.restored" = "Восстановлено из корзины";
 "detail.deleteForever" = "Удалить навсегда";
@@ -239,6 +259,11 @@
 "settings.themeLight" = "Светлая";
 "settings.themeDark" = "Тёмная";
 "settings.language" = "Язык";
+"settings.textSize" = "Размер текста";
+"settings.textSizeHint" = "В macOS нет системного Dynamic Type, поэтому VaultGuard хранит свой размер текста. Также ⌘+ и ⌘−; ⌘0 возвращает обычный.";
+"settings.textLarger" = "Крупнее";
+"settings.textSmaller" = "Мельче";
+"settings.textReset" = "Обычный размер";
 "settings.showFavicons" = "Показывать фавиконки сайтов";
 "settings.logoutButton" = "Выйти и удалить все локальные данные";
 "settings.vaultguardDesc" = "Нативный macOS-клиент для Vaultwarden";
@@ -297,14 +322,30 @@
 "migration.importButton" = "Импорт из KeePass (.kdbx)…";
 "migration.importJSONButton" = "Импорт Bitwarden .json";
 "migration.importJSONHint" = "Импорт незашифрованного экспорта Bitwarden JSON. Добавляется в хранилище (без дедупа).";
+"migration.import1PUXButton" = "Импорт 1Password (.1pux)";
+"migration.import1PUXHint" = "Импорт незашифрованного экспорта 1Password. Логины, карты, удостоверения и заметки переносятся вместе с пользовательскими полями; документы и вложения — нет.";
 "migration.importCSVButton" = "Импорт CSV (LastPass / Bitwarden)";
 "migration.importCSVHint" = "Импорт CSV-экспорта. Распознаются LastPass, Bitwarden и обычный формат url/username/password.";
+"migration.exportJSONButton" = "Экспорт в Bitwarden JSON";
+"migration.exportJSONTitle" = "Переход на сервер Bitwarden";
+"migration.exportJSONHint" = "Файл НЕ зашифрован: все пароли в нём читаются открытым текстом. Импортируйте его в Bitwarden и сразу удалите. Вложения и иконки KeePass не переносятся.";
+"migration.jsonExported" = "Экспорт записан";
+"backup.title" = "Локальные копии";
+"backup.hint" = "Перед каждым сохранением снимается копия .kdbx; хранятся десять последних. Сохраните копию куда-нибудь и откройте её как обычную базу — VaultGuard никогда не пишет копию поверх вашего файла.";
+"backup.empty" = "Копий пока нет";
+"backup.saveCopy" = "Сохранить копию…";
+"backup.delete" = "Удалить снимок";
+"backup.deleteConfirm" = "Удалить этот снимок?";
+"backup.deleteMessage" = "Восстановить его будет нельзя. Снимок хранит пароль, который был у базы в момент снимка: после смены мастер-пароля удалите старые снимки, чтобы прежний пароль их больше не открывал.";
+"backup.deleteRefused" = "Этот файл не является снимком VaultGuard, поэтому он не удалён.";
+"backup.saved" = "Копия сохранена";
 "migration.importCompleteDedup" = "Импортировано %d, пропущено дублей: %d";
 "migration.importTitle" = "Импорт базы";
 "migration.importHint" = "Записи добавляются в текущее хранилище как логины. Корзина пропускается.";
 "migration.importComplete" = "Импортировано записей: %d";
 "migration.importEmpty" = "Нечего импортировать";
 "migration.chooseFile" = "Выбрать файл .kdbx…";
+"dragdrop.tooLarge" = "Слишком большой файл (больше %2$d МБ): %1$@";
 "dragdrop.uploadFailed" = "Ошибка загрузки";
 "dragdrop.dropFiles" = "Перетащите файлы или папки для вложения";
 "dragdrop.dropOrChoose" = "Перетащите файлы или нажмите для выбора";
@@ -360,6 +401,7 @@
 "auth.storageKeePass" = "Файл KeePass";
 "keepass.readOnly" = "Хранилище KeePass доступно только для чтения";
 "keepass.saveBlockedAttachments" = "Сохранение заблокировано: в базе есть вложения (%d), которые эта версия пока не сохраняет. Поддержка вложений — следующий этап.";
+"keepass.upgradedToV4" = "База была в формате KDBX 3 и сохранена как KDBX 4.1. Теперь для неё нужен KeePass 2.48 или KeePassXC 2.7 либо новее.";
 "auth.kdbxFileLabel" = "Файл KeePass (.kdbx)";
 "auth.kdbxChoose" = "Выбрать файл .kdbx…";
 "auth.keyfileLabel" = "Ключ-файл (необязательно)";

@@ -17,7 +17,9 @@ has to pass on every pull request — CI already enforces the per-PR gates.
 - [ ] No force-unwrapped `URL(string:)!`.
 - [ ] No reintroduced legacy keychain/cache symbols.
 - [ ] No misleading "master password saved" copy.
-- [ ] `Argon2Swift` pinned to the audited revision; no unexpected branch pins.
+- [ ] Vendored Argon2 matches `Packages/Argon2/SHA256SUMS`, with no unlisted files.
+- [ ] No remote Swift package dependencies; no `Package.resolved` with pins.
+- [ ] No literal localization keys (`"key".localized`).
 
 ## Secrets & signing
 
@@ -31,9 +33,21 @@ has to pass on every pull request — CI already enforces the per-PR gates.
 - [ ] Unlock, browse, search, generator, TOTP, attachments on a real vault.
 - [ ] Send: create, list, and delete an encrypted Send.
 - [ ] KeePass: open an existing `.kdbx`, create a new one, edit, save, reopen.
-- [ ] Import (Bitwarden JSON / CSV) and export to KeePass.
+- [ ] Import (Bitwarden JSON / CSV, 1Password `.1pux`); export to KeePass and to Bitwarden JSON.
+- [ ] KeePass: make several edits in quick succession on a real database with a strong
+      Argon2 profile. The window must not freeze, and after reopening the file every edit
+      must be there.
+- [ ] Multiple selection: bulk delete, move and favourite; on a KeePass vault, 50 selected
+      items are written in one save.
+- [ ] Text size at 150% (`⌘+`): sidebar labels, the list/detail split, and the password
+      health and Send sheets still fit.
+- [ ] Settings → KeePass snapshots: delete one; it disappears from the list and from disk.
+- [ ] Sign-in screen: an `http://` server address shows the plain-HTTP warning.
+- [ ] A server behind a path with capitals (`https://host/Vault`): sign in, lock, unlock with
+      Touch ID — the second unlock must reach the same path.
 - [ ] Light, dark, and high-contrast appearances.
-- [ ] Close the main window, then restore it with **Window → Show VaultGuard** / `⌘0`.
+- [ ] Close the main window, then restore it with **Window → Show VaultGuard** / `⌘⇧0`.
+      (`⌘0` resets the text size.)
 - [ ] With Settings left open, close and restore the main window; no duplicate window is created.
 - [ ] Close the main window and click the Dock icon; the same main window becomes key.
 - [ ] English and Russian; Settings tabs are not truncated.

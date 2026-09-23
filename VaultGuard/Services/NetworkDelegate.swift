@@ -17,11 +17,21 @@ final class CertTrustStore: @unchecked Sendable {
     private let defaults = UserDefaults.standard
     private let pinnedKey = "trustedCertFingerprints"   // [host: sha256hex]
     private let lock = NSLock()
-    private var lastSeen: [String: String] = [:]        // in-memory only: host -> sha256hex
+    private let seenKey = "lastSeenCertFingerprints"    // [host: sha256hex]
 
-    private func pinnedMap() -> [String: String] {
-        (defaults.dictionary(forKey: pinnedKey) as? [String: String]) ?? [:]
+    /// nil when a value is stored that is not a `[String: String]`.
+    ///
+    /// The distinction matters because every mutation here is read-modify-write. Collapsing
+    /// an unreadable map into an empty one meant that trusting a new host would drop every
+    /// certificate the user had already approved — they would be asked to re-approve servers
+    /// they had, which is exactly the prompt a person learns to click through.
+    private func pinnedMapOrNil() -> [String: String]? {
+        guard let stored = defaults.object(forKey: pinnedKey) else { return [:] }  // nothing yet
+        return stored as? [String: String]
     }
+
+    private func pinnedMap() -> [String: String] { pinnedMapOrNil() ?? [:] }
+
     private func writePinned(_ map: [String: String]) {
         defaults.set(map, forKey: pinnedKey)
     }
@@ -30,25 +40,59 @@ final class CertTrustStore: @unchecked Sendable {
     func pinnedFingerprint(host: String) -> String? { pinnedMap()[host.lowercased()] }
 
     func pin(host: String, fingerprint: String) {
-        var m = pinnedMap(); m[host.lowercased()] = fingerprint; writePinned(m)
+        guard var m = pinnedMapOrNil() else {
+            Log.fault("pin skipped: the trusted-certificate map could not be read")
+            return
+        }
+        m[host.lowercased()] = fingerprint
+        writePinned(m)
     }
+
     func unpin(host: String) {
-        var m = pinnedMap(); m.removeValue(forKey: host.lowercased()); writePinned(m)
+        guard var m = pinnedMapOrNil() else {
+            Log.fault("unpin skipped: the trusted-certificate map could not be read")
+            return
+        }
+        m.removeValue(forKey: host.lowercased())
+        writePinned(m)
     }
     /// All trusted (host, fingerprint) pairs, for display/management in Settings.
     func allPinned() -> [(host: String, fingerprint: String)] {
         pinnedMap().map { (host: $0.key, fingerprint: $0.value) }.sorted { $0.host < $1.host }
     }
 
+    /// Same read-modify-write hazard as the pinned map, with less at stake: losing a seen
+    /// fingerprint only means the trust prompt has to be triggered again by a fresh handshake.
+    private func seenMapOrNil() -> [String: String]? {
+        guard let stored = defaults.object(forKey: seenKey) else { return [:] }
+        return stored as? [String: String]
+    }
+
+    private func seenMap() -> [String: String] { seenMapOrNil() ?? [:] }
+
     /// Last untrusted fingerprint the delegate saw for `host` (set on a rejected handshake).
+    ///
+    /// Persisted, not in-memory: the fingerprint is recorded during the handshake that the
+    /// delegate then rejects, and the UI reads it afterwards to ask the user whether to trust
+    /// the certificate. Keeping it in memory meant that after a relaunch the first handshake
+    /// failed, the app restarted before the user answered, and the prompt could never be shown
+    /// again — the host became unreachable with no way to trust it. A leaf certificate
+    /// fingerprint is public data, so UserDefaults is the same storage the pinned map uses.
     func seenFingerprint(host: String) -> String? {
-        lock.lock(); defer { lock.unlock() }; return lastSeen[host.lowercased()]
+        lock.lock(); defer { lock.unlock() }
+        return seenMap()[host.lowercased()]
     }
     func recordSeen(host: String, fingerprint: String) {
-        lock.lock(); lastSeen[host.lowercased()] = fingerprint; lock.unlock()
+        lock.lock(); defer { lock.unlock() }
+        guard var m = seenMapOrNil() else { return }
+        m[host.lowercased()] = fingerprint
+        defaults.set(m, forKey: seenKey)
     }
     func clearSeen(host: String) {
-        lock.lock(); lastSeen.removeValue(forKey: host.lowercased()); lock.unlock()
+        lock.lock(); defer { lock.unlock() }
+        guard var m = seenMapOrNil() else { return }
+        m.removeValue(forKey: host.lowercased())
+        defaults.set(m, forKey: seenKey)
     }
 
     /// SHA-256 of a certificate's DER bytes, formatted as uppercase colon-separated hex.

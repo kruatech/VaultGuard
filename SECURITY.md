@@ -27,9 +27,10 @@ Reports are handled on a best-effort basis by a small project. You can expect an
 - The master password is never persisted. Biometric unlock stores biometric-protected vault key material, not the raw master password.
 - Keychain items are split into two access groups: an app-private group (tokens, wrapped user key, KDF params, offline-cache key, account index, KeePass bookmarks) that the AutoFill extension is not entitled to, and a shared group holding only minimal AutoFill state.
 - Self-signed TLS certificates require explicit SHA-256 fingerprint confirmation and are pinned per host.
-- Decrypted attachment previews are written only to an isolated temporary directory, older previews are removed before a new preview, and previews are cleaned up when the app locks.
+- Decrypted attachments are previewed in memory only and never written to disk by the app; they are dropped when the preview closes and when the app locks. A decrypted file reaches the disk only when the user saves it explicitly.
 - AutoFill serves credentials from a separate, minimal cache sealed under a key derived from a short-lived shared secret; lock / logout / account removal / local vault close / TTL expiry all revoke access. The extension never receives the real vault key or any token.
-- Passkey private keys are stored behind a user-presence access control and are deleted on logout / account removal / local vault removal.
+- Passkey private keys are stored behind a user-presence access control and are deleted on logout / account removal / local vault removal. A registration never overwrites stored passkeys it could not read.
+- The Argon2 implementation used for key derivation is vendored at a pinned upstream commit, and CI verifies every file against recorded hashes.
 
 ## Scope
 

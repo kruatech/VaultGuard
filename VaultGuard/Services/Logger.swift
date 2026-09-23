@@ -18,6 +18,7 @@ enum Log {
     private static let networkLogger = os.Logger(subsystem: subsystem, category: "network")
     private static let appLogger = os.Logger(subsystem: subsystem, category: "app")
     private static let faultLogger = os.Logger(subsystem: subsystem, category: "fault")
+    private static let auditLogger = os.Logger(subsystem: subsystem, category: "audit")
 
     private static var subsystem: String {
         Bundle.main.bundleIdentifier ?? "com.kruatech.vaultguard"
@@ -45,5 +46,20 @@ enum Log {
     /// Keychain status code. NEVER pass secrets, key material, tokens, or values here.
     static func fault(_ message: String) {
         faultLogger.error("\(message, privacy: .public)")
+    }
+
+    /// Always-on channel for security-relevant *events*: unlocks, failed unlocks, lock,
+    /// logout, Send creation, plaintext export.
+    ///
+    /// Separate from `fault` because these are not failures — a successful unlock is worth
+    /// recording precisely because it succeeded. A password manager that never records who
+    /// opened the vault and when leaves the user with nothing to look at after a suspected
+    /// compromise.
+    ///
+    /// Same rule as every other channel, and it matters more here: the message must be a
+    /// fixed literal. No email, no server host, no item name, no counts that could identify
+    /// a vault. What happened and when — the system log already stamps the rest.
+    static func audit(_ event: StaticString) {
+        auditLogger.notice("\(event, privacy: .public)")
     }
 }

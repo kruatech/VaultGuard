@@ -1,0 +1,3 @@
+pykeepass>=4.0
+cryptography>=42.0
+argon2-cffi>=23.1

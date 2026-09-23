@@ -65,18 +65,21 @@ extension AppState {
             }
 
             let backend = KeePassBackend(fileData: data, password: password, keyfile: keyfileData)
-            let vault = try await backend.load()
+            let vault = try await Self.loadFreshBackend(backend)
             let rawEntries = VaultMigrator.importFromKDBX(ciphers: vault.ciphers, folders: vault.folders)
             guard !rawEntries.isEmpty else { showToast(.info(L10n.Migration.importEmpty.localized)); return }
             let entries = VaultMigrator.dedupEntries(rawEntries, against: ciphers)
             let skipped = rawEntries.count - entries.count
 
-            let noName = "misc.noName".localized
-            let noOrgKey = "misc.noOrgKey".localized
-            let undecryptable = "misc.undecryptable".localized
+            let noName = L10n.Misc.noName.localized
+            let noOrgKey = L10n.Misc.noOrgKey.localized
+            let undecryptable = L10n.Misc.undecryptable.localized
             var created = 0
+            beginBatch(total: entries.count)
+            defer { endBatch() }
 
             for entry in entries {
+                defer { advanceBatch() }
                 // Resolve or create the destination folder by path.
                 var folderId: String?
                 if let path = entry.folderPath, !path.isEmpty {
@@ -132,12 +135,15 @@ extension AppState {
             let entries = VaultMigrator.dedupEntries(rawEntries, against: ciphers)
             let skipped = rawEntries.count - entries.count
 
-            let noName = "misc.noName".localized
-            let noOrgKey = "misc.noOrgKey".localized
-            let undecryptable = "misc.undecryptable".localized
+            let noName = L10n.Misc.noName.localized
+            let noOrgKey = L10n.Misc.noOrgKey.localized
+            let undecryptable = L10n.Misc.undecryptable.localized
             var created = 0
+            beginBatch(total: entries.count)
+            defer { endBatch() }
 
             for entry in entries {
+                defer { advanceBatch() }
                 var folderId: String?
                 if let path = entry.folderPath, !path.isEmpty {
                     if let existing = folders.first(where: { $0.name == path }) {
@@ -168,6 +174,61 @@ extension AppState {
 
     /// Import a CSV export (LastPass / Bitwarden / generic). Merges into the current vault with
     /// dedup; attachments and organizations are not part of CSV exports.
+
+    /// Import a 1Password `.1pux` export. Same flow as the Bitwarden JSON import — parse,
+    /// drop what is already here, create the rest — since by this point both are just entries.
+    func import1PUXFile(fileURL: URL) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let access = fileURL.startAccessingSecurityScopedResource()
+            defer { if access { fileURL.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: fileURL)
+            let rawEntries = try VaultMigrator.import1PUX(data: data)
+            guard !rawEntries.isEmpty else { showToast(.info(L10n.Migration.importEmpty.localized)); return }
+            let entries = VaultMigrator.dedupEntries(rawEntries, against: ciphers)
+            let skipped = rawEntries.count - entries.count
+
+            let noName = L10n.Misc.noName.localized
+            let noOrgKey = L10n.Misc.noOrgKey.localized
+            let undecryptable = L10n.Misc.undecryptable.localized
+            var created = 0
+            beginBatch(total: entries.count)
+            defer { endBatch() }
+
+            for entry in entries {
+                defer { advanceBatch() }
+                var folderId: String?
+                if let path = entry.folderPath, !path.isEmpty {
+                    if let existing = folders.first(where: { $0.name == path }) {
+                        folderId = existing.id
+                    } else {
+                        await createFolder(name: path)
+                        folderId = folders.first(where: { $0.name == path })?.id
+                    }
+                }
+                var cipher = entry.cipher
+                cipher.folderId = folderId
+                let req = encryptCipherRequest(cipher)
+                let response = try await api.createCipher(req)
+                guard let decrypted = VaultDecryptor.decryptCipher(
+                    response, crypto: crypto, noName: noName, noOrgKey: noOrgKey, undecryptable: undecryptable) else { continue }
+                ciphers.append(decrypted)
+                created += 1
+            }
+
+            do { try await syncVault() } catch {}
+            showToast(.info(skipped > 0
+                ? String(format: L10n.Migration.importCompleteDedup.localized, created, skipped)
+                : String(format: L10n.Migration.importComplete.localized, created)))
+        } catch {
+            showToast(.error(error.localizedDescription))
+        }
+    }
+
+    /// Import a CSV export (LastPass / Bitwarden / generic). Merges into the current vault with
+    /// dedup; attachments and organizations are not part of CSV exports.
+
     func importCSVFile(fileURL: URL) async {
         isLoading = true
         defer { isLoading = false }
@@ -180,12 +241,15 @@ extension AppState {
             let entries = VaultMigrator.dedupEntries(rawEntries, against: ciphers)
             let skipped = rawEntries.count - entries.count
 
-            let noName = "misc.noName".localized
-            let noOrgKey = "misc.noOrgKey".localized
-            let undecryptable = "misc.undecryptable".localized
+            let noName = L10n.Misc.noName.localized
+            let noOrgKey = L10n.Misc.noOrgKey.localized
+            let undecryptable = L10n.Misc.undecryptable.localized
             var created = 0
+            beginBatch(total: entries.count)
+            defer { endBatch() }
 
             for entry in entries {
+                defer { advanceBatch() }
                 var folderId: String?
                 if let path = entry.folderPath, !path.isEmpty {
                     if let existing = folders.first(where: { $0.name == path }) {

@@ -1,3 +1,4 @@
+import AppKit
 import AuthenticationServices
 import SwiftUI
 
@@ -56,15 +57,32 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
     /// URL scheme registered in the main app.
     private func openMainApp() {
         guard let url = URL(string: "vaultguard://unlock") else { return }
-        extensionContext.open(url, completionHandler: nil)
+        // On macOS, extensionContext.open does nothing for a credential provider and reports
+        // no error (the completion handler simply gets false). The vaultguard:// scheme is
+        // registered by the main app, so the launch actually happens through NSWorkspace;
+        // extensionContext stays as the first attempt so behaviour is unchanged wherever it
+        // does work.
+        extensionContext.open(url) { opened in
+            guard !opened else { return }
+            DispatchQueue.main.async {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 
     private func present(_ rootView: some View) {
         let hosting = NSHostingController(rootView: rootView)
         addChild(hosting)
-        hosting.view.frame = view.bounds
         hosting.view.autoresizingMask = [.width, .height]
         view.addSubview(hosting.view)
+
+        // The size is set explicitly: the extension's controller still has zero bounds at this
+        // point and the system waits for the interface to report its dimensions. Without this
+        // the window never appears and the host is left waiting.
+        let size = NSSize(width: 340, height: 440)
+        preferredContentSize = size
+        view.frame = NSRect(origin: .zero, size: size)
+        hosting.view.frame = view.bounds
     }
 }
 
@@ -91,6 +109,11 @@ struct AutoFillListView: View {
             content
         }
         .frame(width: 340, height: 440)
+        // onAppear belongs here rather than on unlockPrompt: the .locked state rebuilds
+        // unlockPrompt, so auto-starting from there looped forever —
+        // unlock -> failure -> .locked -> unlock. The root VStack lives for the whole
+        // presentation, so exactly one attempt is made. Retrying is the Try again button.
+        .onAppear(perform: unlock)
     }
 
     private var header: some View {
@@ -128,7 +151,6 @@ struct AutoFillListView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear(perform: unlock)
     }
 
     private var list: some View {
